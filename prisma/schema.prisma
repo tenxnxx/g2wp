@@ -1,0 +1,123 @@
+// Prisma schema — Supabase Postgres
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CheckEventStatus {
+  draft
+  open
+  closed
+}
+
+enum CheckMemberStatus {
+  pending
+  approved
+  cancelled
+}
+
+model Member {
+  id                String             @id @default(cuid())
+  name              String
+  age               Int
+  facebookUrl       String?            @map("facebook_url")
+  isLive            Boolean            @default(true) @map("is_live")
+  createBy          String             @map("create_by")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  players           Player[]
+  behaviors         Behavior[]
+  checkEventMembers CheckEventMember[]
+
+  @@index([name])
+  @@index([isLive])
+  @@map("members")
+}
+
+model Player {
+  id        String     @id @default(cuid())
+  name      String
+  memberId  String     @map("member_id")
+  member    Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createBy  String     @map("create_by")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  behaviors Behavior[]
+
+  @@index([memberId])
+  @@index([name])
+  @@map("players")
+}
+
+model Behavior {
+  id          String   @id @default(cuid())
+  description String
+  createBy    String   @map("create_by")
+  memberId    String   @map("member_id")
+  playerId    String   @map("player_id")
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([memberId])
+  @@index([playerId])
+  @@index([description])
+  @@map("behaviors")
+}
+
+model SetDate {
+  id          String       @id @default(cuid())
+  date        DateTime     @db.Date
+  createBy    String       @map("create_by")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  checkEvents CheckEvent[]
+
+  @@index([date])
+  @@map("set_dates")
+}
+
+model CheckEvent {
+  id        String            @id @default(cuid())
+  setDateId String            @map("set_date_id")
+  setDate   SetDate           @relation(fields: [setDateId], references: [id], onDelete: Restrict)
+  title     String?
+  status    CheckEventStatus  @default(draft)
+  createBy  String            @map("create_by")
+  openedAt  DateTime?         @map("opened_at")
+  closedAt  DateTime?         @map("closed_at")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  members   CheckEventMember[]
+
+  @@index([setDateId])
+  @@index([status])
+  @@map("check_events")
+}
+
+model CheckEventMember {
+  id                 String            @id @default(cuid())
+  checkEventId       String            @map("check_event_id")
+  memberId           String            @map("member_id")
+  memberNameSnapshot String            @map("member_name_snapshot")
+  status             CheckMemberStatus @default(pending)
+  decidedBy          String?           @map("decided_by")
+  decidedAt          DateTime?         @map("decided_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  checkEvent         CheckEvent        @relation(fields: [checkEventId], references: [id], onDelete: Cascade)
+  member             Member            @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([checkEventId, memberId])
+  @@index([checkEventId])
+  @@index([memberId])
+  @@index([status])
+  @@map("check_event_members")
+}

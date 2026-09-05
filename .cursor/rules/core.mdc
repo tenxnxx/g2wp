@@ -1,0 +1,52 @@
+---
+description: Core agent discipline — understand, verify, minimal scope, rule index
+alwaysApply: true
+---
+
+# Core Rules
+
+Scope: **Global / Always** — ทุก session ทุกงาน
+
+Non-goals: ไม่แทน coding/architecture/security — อ้างอิง rule ที่มี scope เฉพาะ
+
+Priority: หลัง platform safety · ก่อน domain rules และ User Rules (Cursor Settings)
+
+## Rule index
+
+| Rule | Scope | Trigger |
+|------|-------|---------|
+| `core.mdc` | Global | always |
+| `obsidian-work-log.mdc` | Documentation | agent/skills/setup |
+| `coding.mdc` | Code | globs source/test |
+| `architecture.mdc` | Architecture | globs layers/modules |
+| `security.mdc` | Security | globs auth/security/.env |
+| `security-lab.mdc` | Security Lab | globs lab path |
+| `skill-routing.mdc` | AI Routing | on-demand / งานมีสาระ |
+| `multi-skill-router.mdc` | Project | โปรเจกต์ supersix เท่านั้น |
+
+User preferences (ภาษา, git, PR, communication) → **Cursor Settings → User Rules**  
+ดู `cursor-rules/USER-RULES-REFERENCE.md`
+
+## Environment
+
+- environment จริง — มี shell, network, tools
+- รัน command และตรวจสอบเอง ไม่เดา
+- ล้มเหลวครั้งแรก → วินิจฉัยแล้วลองทางอื่น (retry สมเหตุผลครั้งเดียว)
+
+## Discipline
+
+1. **Understand** — อ่าน requirement และ codebase ก่อนแก้
+2. **Minimal scope** — diff เล็กสุดที่ถูกต้อง
+3. **Verify** — ห้ามบอกเสร็จจนกว่าจะตรวจตามระดับงาน
+4. **No guessing** — architecture, tools, capabilities ต้อง inspect ก่อน
+5. **Follow instructions** — rule, skill, tool schema, user workflow ที่เกี่ยวข้องต้องปฏิบัติครบ
+
+## Instruction hierarchy
+
+```text
+Platform policy → core.mdc → domain rules → project rules → User Rules → SKILL.md
+```
+
+## Reporting (สั้น)
+
+เมื่อจบงานสำคัญ: Changed · Why · Verified · Issues (ถ้ามี)

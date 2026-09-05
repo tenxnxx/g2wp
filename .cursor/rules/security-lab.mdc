@@ -1,0 +1,212 @@
+---
+description: Security AI Training Lab — isolated training environment only
+globs:
+  - "**/security-ai-training-lab/**"
+alwaysApply: false
+---
+
+# Security AI Training Lab Rules
+
+Scope: **Security Lab** — workspace `security-ai-training-lab/**` เท่านั้น
+
+Non-goals: secure coding ทั่วไป → `security.mdc` · ไม่ใช้กับ SuperSix monorepo ปกติ
+
+Priority: ชนะ `security.mdc` เรื่อง Lab isolation
+
+กฎเฉพาะสำหรับ **Security AI Training Lab** — isolated training environment เท่านั้น
+
+Secure coding ทั่วไป → `security.mdc` · architecture → `architecture.mdc`
+
+## Training-Only Gate
+
+ต้องมี:
+
+```env
+TRAINING_ONLY=true
+```
+
+Lab ต้อง **refuse to start** ถ้า:
+
+```text
+TRAINING_ONLY != true
+```
+
+## Core / Lab Separation
+
+```text
+Trusted Core
+      ↓
+Job Queue
+      ↓
+Python Agent Runtime
+      ↓
+Isolated Training Lab
+```
+
+- Core = harden control plane (ไม่ใส่ intentional vulns)
+- Lab = training targets เท่านั้น
+- ห้าม copy vulnerable implementation จาก Lab ไป Core หรือ production
+
+## Isolation Requirements
+
+Lab ต้อง:
+
+- ใช้ Docker
+- ใช้ dedicated network
+- ใช้ synthetic data
+- ไม่ใช้ production credentials
+- ไม่ใช้ production database
+- ไม่ใช้ production secrets
+- ไม่ expose vulnerable service publicly by default (bind localhost / lab network)
+
+## Target Allowlist
+
+อนุญาตโดย default:
+
+```text
+localhost
+127.0.0.1
+security-lab
+*.internal
+Docker lab network
+```
+
+**Public targets ต้อง DENY by default**
+
+## Agent Action Pipeline
+
+ทุก Agent action ต้องผ่าน:
+
+```text
+TargetPolicy
+→ PolicyEngine
+→ Permission Check
+→ Tool Execution
+→ Audit Log
+```
+
+ห้าม bypass PolicyEngine
+
+## Vulnerability Training (Lab only)
+
+Lab สามารถมี intentional vulnerabilities เพื่อการศึกษา เช่น:
+
+- Authentication flaws
+- Authorization flaws
+- IDOR/BOLA simulation
+- Input validation issues
+- XSS training
+- SQL injection training
+- SSRF training
+- Path traversal
+- File upload
+- Business logic flaws
+- Race conditions
+- Misconfiguration
+
+ข้อจำกัด: vulnerability เหล่านี้อยู่ใน Lab เท่านั้น — ห้ามนำไป Core / production
+
+## Skill Learning Workflow
+
+```text
+Discovery
+→ Evidence
+→ Reproduction
+→ Root Cause
+→ Remediation
+→ Regression Test
+→ Validation
+→ Review
+→ ACTIVE
+```
+
+- ห้าม promote finding เป็น Skill โดยตรง
+- Skill เข้า ACTIVE ได้หลัง validation + review (+ regression ตามเกตของโปรเจกต์)
+
+ทุก Skill ต้องมี:
+
+```text
+name
+purpose
+scope
+prerequisites
+detection
+evidence
+remediation
+regression
+confidence
+version
+```
+
+Skill ต้องมี scope ชัดเจน
+
+## Sub-agent Rules (Lab)
+
+```text
+Main Agent
+→ Planning
+→ Task Delegation
+→ Sub-agent
+→ Result
+→ Validation
+→ Integration
+→ Verification
+```
+
+Sub-agent ต้องมี:
+
+- clear responsibility
+- explicit scope
+- explicit input
+- explicit output
+- limited file ownership
+
+หลีกเลี่ยง multiple agents แก้ไฟล์เดียวกันพร้อมกัน  
+Sub-agent ห้ามเปลี่ยน architecture หลักโดยพลการ
+
+## Tool Registry Rules
+
+ทุก Tool ต้องมี:
+
+```text
+name
+description
+inputSchema
+outputSchema
+permissions
+allowedTargets
+timeout
+auditLevel
+```
+
+Tool ห้าม bypass PolicyEngine
+
+## Audit Rules
+
+ทุก Agent Run ต้องบันทึก:
+
+```text
+run_id
+agent
+target
+tool
+action
+timestamp
+result
+finding
+```
+
+Agent ห้ามแก้ไขหรือลบ audit history ของตัวเอง
+
+## Security Lab Testing (required)
+
+ต้องมี test สำหรับ:
+
+```text
+Agent cannot access unauthorized target
+Tool cannot bypass PolicyEngine
+Lab cannot start without TRAINING_ONLY=true
+Lab cannot access production secrets
+Skill cannot become ACTIVE without validation
+Audit logs cannot be modified by Agent
+```

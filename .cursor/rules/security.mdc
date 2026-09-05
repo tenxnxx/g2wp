@@ -1,0 +1,128 @@
+---
+description: Secure coding — auth, validation, secrets, injection prevention
+globs:
+  - "**/auth/**"
+  - "**/security/**"
+  - "**/.env*"
+  - "**/plugins/auth.ts"
+  - "apps/backend/src/plugins/**"
+  - "**/*middleware*"
+alwaysApply: false
+---
+
+# Secure Coding Rules
+
+Scope: **Security** — โค้ดที่เกี่ยวกับความปลอดภัย
+
+Non-goals: Lab isolation → `security-lab.mdc` · coding style → `coding.mdc`
+
+Priority: ชนะ `coding.mdc` เรื่อง trust boundary · `security-lab` ชนะเรื่อง Lab isolation
+
+ใช้เมื่อเขียนหรือรีวิวโค้ดที่เกี่ยวกับความปลอดภัย · coding ทั่วไป → `coding.mdc` · Lab isolation → `security-lab.mdc`
+
+## Core Principles
+
+```text
+Never trust input
+Never hardcode secrets
+Never bypass authorization
+Least privilege
+Verify security assumptions
+```
+
+## Checklist
+
+### Authentication
+
+- ยืนยันตัวตนด้วยกลไกที่เหมาะสม (session / token / OIDC)
+- เก็บ credential อย่างปลอดภัย (hash + salt สำหรับ passwords)
+- ป้องกัน brute force / credential stuffing ตามความเสี่ยง
+
+### Authorization
+
+- ตรวจสิทธิ์ทุก action ที่ sensitive
+- ห้ามพึ่งพาการซ่อน UI เป็นการบังคับสิทธิ์
+- ระวัง IDOR / BOLA — ตรวจ ownership ของ resource
+
+### Input Validation
+
+- Validate ที่ trust boundary
+- Prefer allowlist มากกว่า denylist
+- แยก type / length / format / business constraints
+
+### Output Encoding
+
+- Encode ตาม context (HTML, URL, JS, CSS)
+- อย่าสะสม untrusted data ลง template โดยไม่ encode
+
+### Injection & Common Web Risks
+
+- **SQL Injection** — parameterized queries / ORM อย่างถูกต้อง; ห้ามต่อ string จาก user
+- **XSS** — encode output; CSP เมื่อเหมาะสม
+- **CSRF** — anti-CSRF สำหรับ state-changing cookie sessions
+- **SSRF** — ห้ามให้ server fetch URL ที่ผู้ใช้ควบคุมโดยไม่ผ่าน allowlist
+- **Command Injection** — หลีกเลี่ยง shell; ถ้าจำเป็นต้อง escape + allowlist args
+- **Path Traversal** — normalize path; จำกัด base directory
+
+### File Upload
+
+- ตรวจประเภทไฟล์จริง ไม่พึ่ง extension อย่างเดียว
+- จำกัดขนาดและประเภท
+- เก็บนอก web root หรือผ่าน signed access
+- สแกน/sanitize ตามความเสี่ยง
+
+### Secrets & Sensitive Data
+
+- Secrets อยู่ใน env / secret manager — ห้าม hardcode ใน repo
+- ห้าม log passwords, tokens, API keys, PII ที่ไม่จำเป็น
+- Rotate เมื่อรั่ว; แยก prod / non-prod credentials
+
+### Error Handling & Logging
+
+- Error ต่อผู้ใช้ไม่ expose stack / internal detail
+- Log พอสำหรับ audit/debug โดยไม่ leak secrets
+- แยก expected business error กับ infrastructure error
+
+### API Security
+
+- AuthN/AuthZ ทุก endpoint ที่ต้องการ
+- Rate limiting เมื่อเหมาะสม
+- Predictable error codes โดยไม่เปิดช่องทาง enumeration เกินจำเป็น
+- Versioning และการ deprecate อย่างมีแผน
+
+### Dependency Security
+
+- ตรวจ known vulnerabilities ก่อนเพิ่ม dependency
+- Pin versions เมื่อเหมาะสม
+- อย่าดึง package ที่ไม่จำเป็น
+
+### Least Privilege
+
+- Service accounts / DB roles / cloud IAM ใช้สิทธิ์ต่ำสุดที่ทำงานได้
+- แยกสิทธิ์ระหว่าง components
+
+## AI Agent Security Flow
+
+เมื่อระบบมี Agent ที่เรียก tools:
+
+```text
+Agent
+→ PolicyEngine
+→ Target Validation
+→ Permission Check
+→ Tool
+→ Audit Log
+```
+
+- ห้ามให้ Agent bypass PolicyEngine
+- ทุก tool execution ต้องผ่าน permission check
+- บันทึก audit สำหรับการกระทำที่สำคัญ
+
+## Verification Mindset
+
+ก่อนบอกว่าปลอดภัย:
+
+- ระบุ trust boundary
+- ระบุ attacker model ที่สมเหตุสมผล
+- ทดสอบ negative cases (unauthorized, malformed, boundary)
+- อย่าสมมติว่า framework ทำให้อัตโนมัติครบแล้ว

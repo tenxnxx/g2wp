@@ -1,0 +1,126 @@
+---
+description: Coding standards — naming, quality, error handling, testing
+globs:
+  - "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+  - "**/*.{py,go,rs,java,kt}"
+  - "**/*.test.{ts,tsx,js}"
+  - "**/*.spec.{ts,tsx,js}"
+  - "**/__tests__/**"
+  - "**/tests/**"
+alwaysApply: false
+---
+
+# Coding Rules
+
+Scope: **Code** — แก้/เขียน source และ test files
+
+Non-goals: layer boundaries → `architecture.mdc` · security detail → `security.mdc` · skill routing → `skill-routing.mdc`
+
+Priority: architecture ชนะเรื่อง layers · security ชนะเรื่อง trust boundary
+
+Related: `architecture.mdc` · `security.mdc` · `security-lab.mdc`
+
+## 1. Core
+
+- เข้าใจ codebase ก่อนแก้ · อ่านไฟล์ที่เกี่ยวข้อง
+- แก้ต้นเหตุ ไม่แก้อาการ · scope เล็กสุดที่ถูกต้อง
+- ใช้ pattern เดิมของโปรเจกต์ · ห้าม over-engineer
+- ห้ามบอกเสร็จถ้ายังไม่ verify
+
+## 2. Caveman / Clean Code
+
+Problem → Understand → Simplest solution → Implement → Verify
+
+- **KISS / YAGNI / DRY** — abstraction เมื่อซ้ำจริงและมีเหตุผล
+- ตั้งชื่อชัด · ฟังก์ชันทำอย่างเดียว · comment เฉพาะ logic ที่ไม่ obvious
+- Type safety เต็มที่ · หลีกเลี่ยง `any` โดยไม่จำเป็น
+
+## 3. Requirement
+
+อ่าน requirement → ตรวจ codebase → หา existing impl → ระบุไฟล์ → plan  
+ไม่ชัดและกระทบ architecture/data → ถาม · รายละเอียดเล็ก → default สมเหตุสมผล
+
+## 4. Architecture (summary)
+
+รายละเอียด → `architecture.mdc` · Domain ไม่ผูก DB/HTTP/UI
+
+## 5. Database (summary)
+
+ตรวจ schema, relations, migrations, constraints ก่อนแก้  
+ห้าม destructive schema โดยไม่ migration · ห้ามลบ prod data โดยไม่ยืนยัน
+
+## 6. API
+
+validation · predictable response · meaningful error · HTTP status ถูกต้อง  
+authz เมื่อจำเป็น · log ไม่ leak sensitive data  
+Controller: input → use case → output
+
+## 7. Security (summary)
+
+→ `security.mdc` · ห้าม hard-code secrets · ห้าม trust user input
+
+## 8. Configuration
+
+env / config files / typed config — อย่า hard-code ใน business logic
+
+## 9. Error Handling
+
+predictable · actionable · ไม่กลืน exception · ไม่ expose internal ให้ user  
+แยก business / validation / infrastructure / unexpected error
+
+## 10. Testing
+
+แก้ business logic → เพิ่ม/แก้ test ที่มีความหมาย  
+Priority: unit rules → integration API/DB → E2E critical  
+ไม่เขียน test เพื่อ coverage อย่างเดียว
+
+## 11. TDD
+
+ใช้เมื่อเหมาะสม — ไม่บังคับ typo/UI spacing/docs
+
+## 12. Frontend
+
+UI → state → logic → API · หลีกเลี่ยง giant components · logic ใน JSX น้อย
+
+## 13. Backend
+
+Route → Controller → Use Case → Domain → Repository (เมื่อ complexity พอ)  
+route ไม่มี business logic จำนวนมาก
+
+## 14. Async / Concurrency
+
+race · idempotency · transactions · retry · timeout — ระวัง payment/order/stock
+
+## 15. Performance
+
+อย่า optimize ก่อนมีปัญหา · แต่แก้ N+1, unnecessary calls/re-renders, large payload
+
+## 16. Logging
+
+log: operation, request ID, entity ID, error context  
+ห้าม log: password, token, API key, PII
+
+## 17. Dependencies
+
+มีของเดิม/stdlib ได้ไหม? จำเป็นจริงไหม? maintenance/security?
+
+## 18. Refactoring
+
+เมื่อลด complexity/duplication — ห้าม rewrite ทั้ง project โดยไม่จำเป็น
+
+## 19. Debugging
+
+Observe → Reproduce → Isolate → Root cause → Fix → Test → Verify  
+อย่าสุ่มแก้หลายจุด
+
+## 20. Code Review (self)
+
+correctness · security · maintainability · tests · edge cases · unintended diff
+
+## 21. Verification
+
+typecheck · lint · relevant tests · build · diff — บอกตรง ๆ ถ้า test รันไม่ได้
+
+## 22. Golden Rule
+
+Understand → Keep it simple → Verify · ไม่รู้ → Inspect · ใหญ่ → Break down
