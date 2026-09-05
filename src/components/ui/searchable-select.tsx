@@ -179,7 +179,7 @@ export function SearchableSelect({
               left: position.left,
               width: position.width,
             }}
-            className="fixed z-[80] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
+            className="fixed z-[110] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-panel)]"
           >
             <div className="border-b border-[var(--line)] p-2">
               <input
