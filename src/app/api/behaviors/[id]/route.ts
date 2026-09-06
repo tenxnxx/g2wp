@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
-import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import {
+  normalizeHttpUrl,
+  prismaErrorResponse,
+  readJsonBody,
+} from "@/lib/api-errors";
+import { REPORT_EVIDENCE_URL_MAX } from "@/lib/behavior-reports";
 import { prisma } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
@@ -8,6 +13,7 @@ type Params = { params: Promise<{ id: string }> };
 function serializeBehavior(behavior: {
   id: string;
   description: string;
+  evidenceUrl: string | null;
   createBy: string;
   memberId: string;
   playerId: string;
@@ -19,6 +25,7 @@ function serializeBehavior(behavior: {
   return {
     id: behavior.id,
     description: behavior.description,
+    evidenceUrl: behavior.evidenceUrl,
     createBy: behavior.createBy,
     memberId: behavior.memberId,
     playerId: behavior.playerId,
@@ -71,6 +78,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const data: {
       description?: string;
+      evidenceUrl?: string | null;
       memberId?: string;
       playerId?: string;
     } = {};
@@ -79,18 +87,44 @@ export async function PATCH(request: Request, { params }: Params) {
       const description = String(body.description).trim();
       if (!description) {
         return NextResponse.json(
-          { error: "description is required" },
+          { error: "กรอกรายละเอียด" },
+          { status: 400 },
+        );
+      }
+      if (description.length > 2000) {
+        return NextResponse.json(
+          { error: "รายละเอียดยาวเกินไป (สูงสุด 2000 ตัวอักษร)" },
           { status: 400 },
         );
       }
       data.description = description;
     }
 
+    if ("evidenceUrl" in body) {
+      const evidenceResult = normalizeHttpUrl(body.evidenceUrl);
+      if (!evidenceResult.ok) {
+        return NextResponse.json(
+          { error: evidenceResult.error },
+          { status: 400 },
+        );
+      }
+      if (
+        evidenceResult.url &&
+        evidenceResult.url.length > REPORT_EVIDENCE_URL_MAX
+      ) {
+        return NextResponse.json(
+          { error: "ลิงก์หลักฐานยาวเกินไป" },
+          { status: 400 },
+        );
+      }
+      data.evidenceUrl = evidenceResult.url;
+    }
+
     if (body.memberId !== undefined) {
       const memberId = String(body.memberId).trim();
       if (!memberId) {
         return NextResponse.json(
-          { error: "memberId is required" },
+          { error: "เลือกสมาชิก" },
           { status: 400 },
         );
       }
@@ -101,7 +135,7 @@ export async function PATCH(request: Request, { params }: Params) {
       const playerId = String(body.playerId).trim();
       if (!playerId) {
         return NextResponse.json(
-          { error: "playerId is required" },
+          { error: "เลือกตัวละคร" },
           { status: 400 },
         );
       }
@@ -125,11 +159,11 @@ export async function PATCH(request: Request, { params }: Params) {
       const player = await prisma.player.findUnique({ where: { id: playerId } });
 
       if (!player) {
-        return NextResponse.json({ error: "Player not found" }, { status: 400 });
+        return NextResponse.json({ error: "ไม่พบตัวละคร" }, { status: 400 });
       }
       if (player.memberId !== memberId) {
         return NextResponse.json(
-          { error: "player does not belong to selected member" },
+          { error: "ตัวละครไม่ได้อยู่กับสมาชิกที่เลือก" },
           { status: 400 },
         );
       }

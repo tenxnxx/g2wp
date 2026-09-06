@@ -6,32 +6,31 @@ import {
   readJsonBody,
 } from "@/lib/api-errors";
 import { prisma } from "@/lib/db";
+import { parseGroupIdInput, serializeMember } from "@/lib/members";
 import {
   buildPaginationMeta,
   getSkip,
   parsePaginationParams,
+  parseSearchQuery,
 } from "@/lib/pagination";
 
-function serializeMember(member: {
-  id: string;
-  name: string;
-  age: number;
-  facebookUrl: string | null;
-  isLive: boolean;
-  createBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: member.id,
-    name: member.name,
-    age: member.age,
-    facebookUrl: member.facebookUrl,
-    isLive: member.isLive,
-    createBy: member.createBy,
-    createdAt: member.createdAt.toISOString(),
-    updatedAt: member.updatedAt.toISOString(),
-  };
+const groupSelect = { id: true, groupName: true } as const;
+
+async function resolveAssignableGroupId(
+  groupId: string | null,
+): Promise<{ ok: true; groupId: string | null } | { ok: false; error: string }> {
+  if (!groupId) return { ok: true, groupId: null };
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: { id: true, isUse: true },
+  });
+  if (!group) {
+    return { ok: false, error: "ไม่พบกลุ่มที่เลือก" };
+  }
+  if (!group.isUse) {
+    return { ok: false, error: "กลุ่มนี้ปิดใช้งานแล้ว" };
+  }
+  return { ok: true, groupId: group.id };
 }
 
 export async function GET(request: Request) {
@@ -42,7 +41,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const { page, limit } = parsePaginationParams(searchParams);
     const skip = getSkip(page, limit);
-    const search = searchParams.get("q")?.trim() || undefined;
+    const search = parseSearchQuery(searchParams);
     const where = search
       ? { name: { contains: search, mode: "insensitive" as const } }
       : undefined;
@@ -54,6 +53,7 @@ export async function GET(request: Request) {
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
+        include: { group: { select: groupSelect } },
       }),
     ]);
 
@@ -94,15 +94,43 @@ export async function POST(request: Request) {
     const isLive = typeof body.isLive === "boolean" ? body.isLive : true;
     const createBy = actorLabel(auth.user);
 
-    if (!name || !Number.isInteger(age) || age < 0 || age > 150) {
+    if (!name) {
+      return NextResponse.json({ error: "กรอกชื่อสมาชิก" }, { status: 400 });
+    }
+    if (name.length > 100) {
       return NextResponse.json(
-        { error: "name and valid age are required" },
+        { error: "ชื่อสมาชิกยาวเกินไป (สูงสุด 100 ตัวอักษร)" },
+        { status: 400 },
+      );
+    }
+    if (!Number.isInteger(age) || age < 0 || age > 150) {
+      return NextResponse.json(
+        { error: "อายุต้องเป็นจำนวนเต็มระหว่าง 0–150 ปี" },
         { status: 400 },
       );
     }
 
+    const groupParsed = parseGroupIdInput(body);
+    if (!groupParsed.ok) {
+      return NextResponse.json({ error: groupParsed.error }, { status: 400 });
+    }
+    const groupResolved = await resolveAssignableGroupId(
+      groupParsed.present ? groupParsed.groupId : null,
+    );
+    if (!groupResolved.ok) {
+      return NextResponse.json({ error: groupResolved.error }, { status: 400 });
+    }
+
     const member = await prisma.member.create({
-      data: { name, age, facebookUrl, isLive, createBy },
+      data: {
+        name,
+        age,
+        facebookUrl,
+        isLive,
+        createBy,
+        groupId: groupResolved.groupId,
+      },
+      include: { group: { select: groupSelect } },
     });
 
     return NextResponse.json(serializeMember(member), { status: 201 });

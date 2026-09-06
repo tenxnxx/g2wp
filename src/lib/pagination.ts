@@ -3,6 +3,7 @@ import {
   type PaginationMeta,
   type PaginationParams,
 } from "@/types/pagination";
+import { SEARCH_Q_MAX } from "@/lib/field-limits";
 
 export function parsePaginationParams(
   searchParams: URLSearchParams,
@@ -12,6 +13,12 @@ export function parsePaginationParams(
   const rawLimit = Number(searchParams.get("limit") ?? defaultLimit) || defaultLimit;
   const limit = Math.min(200, Math.max(1, rawLimit));
   return { page, limit };
+}
+
+export function parseSearchQuery(searchParams: URLSearchParams): string | undefined {
+  const raw = searchParams.get("q")?.trim();
+  if (!raw) return undefined;
+  return raw.slice(0, SEARCH_Q_MAX);
 }
 
 export function buildPaginationMeta(

@@ -2,7 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 /** Bump this whenever prisma/schema.prisma models/fields change (dev hot-reload). */
-const PRISMA_SCHEMA_VERSION = 11;
+const PRISMA_SCHEMA_VERSION = 17;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -28,10 +28,9 @@ function getPrismaClient() {
   }
 
   const client = createPrismaClient();
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = client;
-    globalForPrisma.prismaSchemaVersion = PRISMA_SCHEMA_VERSION;
-  }
+  // Cache on globalThis for warm serverless / HMR reuse
+  globalForPrisma.prisma = client;
+  globalForPrisma.prismaSchemaVersion = PRISMA_SCHEMA_VERSION;
   return client;
 }
 

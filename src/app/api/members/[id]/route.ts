@@ -6,29 +6,29 @@ import {
   readJsonBody,
 } from "@/lib/api-errors";
 import { prisma } from "@/lib/db";
+import { parseGroupIdInput, serializeMember } from "@/lib/members";
 
 type Params = { params: Promise<{ id: string }> };
 
-function serializeMember(member: {
-  id: string;
-  name: string;
-  age: number;
-  facebookUrl: string | null;
-  isLive: boolean;
-  createBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: member.id,
-    name: member.name,
-    age: member.age,
-    facebookUrl: member.facebookUrl,
-    isLive: member.isLive,
-    createBy: member.createBy,
-    createdAt: member.createdAt.toISOString(),
-    updatedAt: member.updatedAt.toISOString(),
-  };
+const groupSelect = { id: true, groupName: true } as const;
+
+async function resolveAssignableGroupId(
+  groupId: string | null,
+  currentGroupId: string | null,
+): Promise<{ ok: true; groupId: string | null } | { ok: false; error: string }> {
+  if (!groupId) return { ok: true, groupId: null };
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: { id: true, isUse: true },
+  });
+  if (!group) {
+    return { ok: false, error: "ไม่พบกลุ่มที่เลือก" };
+  }
+  // Allow keeping an already-assigned inactive group; block new assignment.
+  if (!group.isUse && group.id !== currentGroupId) {
+    return { ok: false, error: "กลุ่มนี้ปิดใช้งานแล้ว" };
+  }
+  return { ok: true, groupId: group.id };
 }
 
 export async function GET(request: Request, { params }: Params) {
@@ -41,7 +41,10 @@ export async function GET(request: Request, { params }: Params) {
     const detail = searchParams.get("detail") === "1";
 
     if (!detail) {
-      const member = await prisma.member.findUnique({ where: { id } });
+      const member = await prisma.member.findUnique({
+        where: { id },
+        include: { group: { select: groupSelect } },
+      });
       if (!member) {
         return NextResponse.json({ error: "Member not found" }, { status: 404 });
       }
@@ -51,8 +54,10 @@ export async function GET(request: Request, { params }: Params) {
     const member = await prisma.member.findUnique({
       where: { id },
       include: {
+        group: { select: groupSelect },
         players: {
           orderBy: { createdAt: "desc" },
+          take: 100,
           select: {
             id: true,
             name: true,
@@ -62,6 +67,7 @@ export async function GET(request: Request, { params }: Params) {
         },
         behaviors: {
           orderBy: { createdAt: "desc" },
+          take: 50,
           select: {
             id: true,
             description: true,
@@ -77,10 +83,15 @@ export async function GET(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
+    const [playerCount, behaviorCount] = await Promise.all([
+      prisma.player.count({ where: { memberId: id } }),
+      prisma.behavior.count({ where: { memberId: id } }),
+    ]);
+
     return NextResponse.json({
       ...serializeMember(member),
-      playerCount: member.players.length,
-      behaviorCount: member.behaviors.length,
+      playerCount,
+      behaviorCount,
       players: member.players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -119,6 +130,7 @@ export async function PATCH(request: Request, { params }: Params) {
       age?: number;
       facebookUrl?: string | null;
       isLive?: boolean;
+      groupId?: string | null;
     } = {};
 
     if (body.name !== undefined) {
@@ -126,13 +138,22 @@ export async function PATCH(request: Request, { params }: Params) {
       if (!name) {
         return NextResponse.json({ error: "name is required" }, { status: 400 });
       }
+      if (name.length > 100) {
+        return NextResponse.json(
+          { error: "ชื่อสมาชิกยาวเกินไป (สูงสุด 100 ตัวอักษร)" },
+          { status: 400 },
+        );
+      }
       data.name = name;
     }
 
     if (body.age !== undefined) {
       const age = Number(body.age);
       if (!Number.isInteger(age) || age < 0 || age > 150) {
-        return NextResponse.json({ error: "invalid age" }, { status: 400 });
+        return NextResponse.json(
+          { error: "อายุต้องเป็นจำนวนเต็มระหว่าง 0–150 ปี" },
+          { status: 400 },
+        );
       }
       data.age = age;
     }
@@ -152,9 +173,35 @@ export async function PATCH(request: Request, { params }: Params) {
       data.isLive = Boolean(body.isLive);
     }
 
+    const groupParsed = parseGroupIdInput(body);
+    if (!groupParsed.ok) {
+      return NextResponse.json({ error: groupParsed.error }, { status: 400 });
+    }
+    if (groupParsed.present) {
+      const current = await prisma.member.findUnique({
+        where: { id },
+        select: { groupId: true },
+      });
+      if (!current) {
+        return NextResponse.json({ error: "Member not found" }, { status: 404 });
+      }
+      const groupResolved = await resolveAssignableGroupId(
+        groupParsed.groupId,
+        current.groupId,
+      );
+      if (!groupResolved.ok) {
+        return NextResponse.json(
+          { error: groupResolved.error },
+          { status: 400 },
+        );
+      }
+      data.groupId = groupResolved.groupId;
+    }
+
     const member = await prisma.member.update({
       where: { id },
       data,
+      include: { group: { select: groupSelect } },
     });
 
     return NextResponse.json(serializeMember(member));

@@ -9,14 +9,17 @@ import type { Member } from "@/types/member";
 export function MembersPageClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   function openCreate() {
     setEditing(null);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
   function openEdit(member: Member) {
     setEditing(member);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
@@ -41,6 +44,7 @@ export function MembersPageClient() {
       <MemberTable onEdit={openEdit} />
 
       <MemberFormModal
+        key={formKey}
         open={modalOpen}
         member={editing}
         onClose={closeModal}

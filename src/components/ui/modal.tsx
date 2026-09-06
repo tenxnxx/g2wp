@@ -4,7 +4,7 @@ import {
   useEffect,
   useId,
   useRef,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -16,7 +16,11 @@ type ModalProps = {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** When true, Escape / backdrop / X do not close the modal */
+  closeDisabled?: boolean;
 };
+
+const subscribeNoop = () => () => undefined;
 
 export function Modal({
   open,
@@ -25,15 +29,16 @@ export function Modal({
   onClose,
   children,
   footer,
+  closeDisabled = false,
 }: ModalProps) {
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +47,7 @@ export function Modal({
     document.body.style.overflow = "hidden";
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !closeDisabled) onClose();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -53,7 +58,7 @@ export function Modal({
       window.removeEventListener("keydown", onKeyDown);
       window.clearTimeout(focusTimer);
     };
-  }, [open, onClose]);
+  }, [open, onClose, closeDisabled]);
 
   if (!open || !mounted) return null;
 
@@ -63,7 +68,10 @@ export function Modal({
         type="button"
         aria-label="ปิด"
         className="absolute inset-0 bg-[color-mix(in_oklab,#000_72%,transparent)] backdrop-blur-[3px] animate-[fadeIn_180ms_ease-out]"
-        onClick={onClose}
+        onClick={() => {
+          if (!closeDisabled) onClose();
+        }}
+        disabled={closeDisabled}
       />
 
       <div
@@ -97,7 +105,8 @@ export function Modal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
+              disabled={closeDisabled}
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)] disabled:pointer-events-none disabled:opacity-40"
               aria-label="ปิดหน้าต่าง"
             >
               <span className="text-lg leading-none">×</span>

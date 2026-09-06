@@ -10,6 +10,7 @@ type ConfirmModalProps = {
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmVariant?: "primary" | "danger";
   pending?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -21,6 +22,7 @@ export function ConfirmModal({
   description,
   confirmLabel = "ลบ",
   cancelLabel = "ยกเลิก",
+  confirmVariant = "danger",
   pending = false,
   onConfirm,
   onClose,
@@ -28,7 +30,8 @@ export function ConfirmModal({
   return (
     <Modal
       open={open}
-      onClose={pending ? () => undefined : onClose}
+      onClose={onClose}
+      closeDisabled={pending}
       title={title}
       description={description}
       footer={
@@ -44,7 +47,7 @@ export function ConfirmModal({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant={confirmVariant}
             onClick={onConfirm}
             disabled={pending}
             className="w-full sm:w-auto sm:min-w-28"

@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
-import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import {
+  normalizeHttpUrl,
+  prismaErrorResponse,
+  readJsonBody,
+} from "@/lib/api-errors";
+import { REPORT_EVIDENCE_URL_MAX } from "@/lib/behavior-reports";
 import { prisma } from "@/lib/db";
 import {
   buildPaginationMeta,
   getSkip,
   parsePaginationParams,
+  parseSearchQuery,
 } from "@/lib/pagination";
 
 function serializeBehavior(behavior: {
   id: string;
   description: string;
+  evidenceUrl: string | null;
   createBy: string;
   memberId: string;
   playerId: string;
@@ -22,6 +29,7 @@ function serializeBehavior(behavior: {
   return {
     id: behavior.id,
     description: behavior.description,
+    evidenceUrl: behavior.evidenceUrl,
     createBy: behavior.createBy,
     memberId: behavior.memberId,
     playerId: behavior.playerId,
@@ -45,9 +53,14 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const { page, limit } = parsePaginationParams(searchParams);
     const skip = getSkip(page, limit);
-    const search = searchParams.get("q")?.trim() || undefined;
+    const search = parseSearchQuery(searchParams);
     const where = search
-      ? { description: { contains: search, mode: "insensitive" as const } }
+      ? {
+          OR: [
+            { description: { contains: search, mode: "insensitive" as const } },
+            { evidenceUrl: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
       : undefined;
 
     const [total, behaviors] = await Promise.all([
@@ -90,24 +103,45 @@ export async function POST(request: Request) {
 
     if (!description || !memberId || !playerId) {
       return NextResponse.json(
-        { error: "description, memberId and playerId are required" },
+        { error: "กรอกรายละเอียด และเลือกสมาชิกกับตัวละคร" },
+        { status: 400 },
+      );
+    }
+    if (description.length > 2000) {
+      return NextResponse.json(
+        { error: "รายละเอียดยาวเกินไป (สูงสุด 2000 ตัวอักษร)" },
+        { status: 400 },
+      );
+    }
+
+    const evidenceResult = normalizeHttpUrl(body.evidenceUrl);
+    if (!evidenceResult.ok) {
+      return NextResponse.json(
+        { error: evidenceResult.error },
+        { status: 400 },
+      );
+    }
+    const evidenceUrl = evidenceResult.url;
+    if (evidenceUrl && evidenceUrl.length > REPORT_EVIDENCE_URL_MAX) {
+      return NextResponse.json(
+        { error: "ลิงก์หลักฐานยาวเกินไป" },
         { status: 400 },
       );
     }
 
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) {
-      return NextResponse.json({ error: "Player not found" }, { status: 400 });
+      return NextResponse.json({ error: "ไม่พบตัวละคร" }, { status: 400 });
     }
     if (player.memberId !== memberId) {
       return NextResponse.json(
-        { error: "player does not belong to selected member" },
+        { error: "ตัวละครไม่ได้อยู่กับสมาชิกที่เลือก" },
         { status: 400 },
       );
     }
 
     const behavior = await prisma.behavior.create({
-      data: { description, memberId, playerId, createBy },
+      data: { description, evidenceUrl, memberId, playerId, createBy },
       include: includeRelations,
     });
 

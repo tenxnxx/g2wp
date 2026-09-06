@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { User } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { authService } from "@/services/auth.service";
 
@@ -23,6 +24,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -57,8 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await authService.logout();
     setUser(null);
-    window.location.href = "/login";
-  }, []);
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
 
   const value = useMemo(
     () => ({ user, loading, logout, refresh }),

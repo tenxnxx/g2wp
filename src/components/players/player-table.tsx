@@ -66,12 +66,9 @@ export function PlayerTable({ onEdit }: PlayerTableProps) {
   const meta = playersQuery.data?.meta;
   const players = playersQuery.data?.data ?? [];
 
-  useEffect(() => {
-    if (!meta) return;
-    if (page > meta.totalPages) {
-      setPage(meta.totalPages);
-    }
-  }, [meta, page]);
+  if (meta && page > meta.totalPages) {
+    setPage(meta.totalPages);
+  }
 
   if (playersQuery.isLoading && !playersQuery.data) {
     return (

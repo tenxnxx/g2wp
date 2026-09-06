@@ -4,6 +4,8 @@ export type Member = {
   age: number;
   facebookUrl: string | null;
   isLive: boolean;
+  groupId: string | null;
+  groupName: string | null;
   createBy: string;
   createdAt: string;
   updatedAt: string;
@@ -39,6 +41,7 @@ export type CreateMemberInput = {
   age: number;
   facebookUrl?: string | null;
   isLive?: boolean;
+  groupId?: string | null;
 };
 
 export type UpdateMemberInput = Partial<CreateMemberInput>;

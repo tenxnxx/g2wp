@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
+import { safeNextPath } from "@/lib/safe-next-path";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -30,6 +31,8 @@ export async function updateSession(request: NextRequest) {
   const isApi = pathname.startsWith("/api/");
   const isPublic =
     pathname === "/login" ||
+    pathname === "/report" ||
+    pathname.startsWith("/api/public/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
@@ -42,13 +45,14 @@ export async function updateSession(request: NextRequest) {
     }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", pathname);
+    url.searchParams.set("next", safeNextPath(pathname));
     return NextResponse.redirect(url);
   }
 
   if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+    url.pathname = next;
     url.search = "";
     return NextResponse.redirect(url);
   }

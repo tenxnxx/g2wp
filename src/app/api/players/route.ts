@@ -6,6 +6,7 @@ import {
   buildPaginationMeta,
   getSkip,
   parsePaginationParams,
+  parseSearchQuery,
 } from "@/lib/pagination";
 
 function serializePlayer(player: {
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
     const { page, limit } = parsePaginationParams(searchParams);
     const skip = getSkip(page, limit);
     const memberId = searchParams.get("memberId")?.trim() || undefined;
-    const search = searchParams.get("q")?.trim() || undefined;
+    const search = parseSearchQuery(searchParams);
     const where =
       memberId || search
         ? {
@@ -91,6 +92,12 @@ export async function POST(request: Request) {
     if (!name || !memberId) {
       return NextResponse.json(
         { error: "name and memberId are required" },
+        { status: 400 },
+      );
+    }
+    if (name.length > 100) {
+      return NextResponse.json(
+        { error: "ชื่อตัวละครยาวเกินไป (สูงสุด 100 ตัวอักษร)" },
         { status: 400 },
       );
     }

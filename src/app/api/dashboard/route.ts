@@ -14,6 +14,7 @@ export async function GET() {
         prisma.behavior.count(),
         prisma.member.findMany({
           orderBy: { createdAt: "desc" },
+          take: 100,
           select: {
             id: true,
             name: true,

@@ -50,6 +50,10 @@ export function MemberDetailModal({
           <section className="grid gap-3 sm:grid-cols-2">
             <InfoRow label="อายุ" value={String(member.age)} />
             <InfoRow
+              label="กลุ่ม"
+              value={member.groupName ?? "ไม่ระบุ"}
+            />
+            <InfoRow
               label="สถานะ"
               value={member.isLive ? "อยู่ในแคลน" : "ไม่อยู่แล้ว"}
             />

@@ -66,12 +66,9 @@ export function BehaviorTable({ onEdit }: BehaviorTableProps) {
   const meta = behaviorsQuery.data?.meta;
   const behaviors = behaviorsQuery.data?.data ?? [];
 
-  useEffect(() => {
-    if (!meta) return;
-    if (page > meta.totalPages) {
-      setPage(meta.totalPages);
-    }
-  }, [meta, page]);
+  if (meta && page > meta.totalPages) {
+    setPage(meta.totalPages);
+  }
 
   if (behaviorsQuery.isLoading && !behaviorsQuery.data) {
     return (
@@ -143,6 +140,7 @@ export function BehaviorTable({ onEdit }: BehaviorTableProps) {
               <thead className="bg-[var(--surface-raised)] text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)]">
                 <tr>
                   <th className="px-5 py-3 font-semibold">รายละเอียด</th>
+                  <th className="px-5 py-3 font-semibold">หลักฐาน</th>
                   <th className="px-5 py-3 font-semibold">สมาชิก</th>
                   <th className="px-5 py-3 font-semibold">ชื่อตัวละคร</th>
                   <th className="px-5 py-3 font-semibold">สร้างโดย</th>
@@ -158,6 +156,20 @@ export function BehaviorTable({ onEdit }: BehaviorTableProps) {
                   >
                     <td className="max-w-xs px-5 py-3 font-medium text-[var(--ink)]">
                       <span className="line-clamp-2">{item.description}</span>
+                    </td>
+                    <td className="max-w-[12rem] px-5 py-3">
+                      {item.evidenceUrl ? (
+                        <a
+                          href={item.evidenceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="line-clamp-1 break-all text-[var(--accent-strong)] underline-offset-2 hover:underline"
+                        >
+                          เปิดลิงก์
+                        </a>
+                      ) : (
+                        <span className="text-[var(--ink-faint)]">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <span className="inline-flex rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent-strong)]">

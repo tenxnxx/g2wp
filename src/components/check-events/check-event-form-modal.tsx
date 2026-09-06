@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,8 +29,8 @@ export function CheckEventFormModal({
   const toast = useToast();
   const isEdit = Boolean(item);
 
-  const [setDateId, setSetDateId] = useState("");
-  const [title, setTitle] = useState("");
+  const [setDateId, setSetDateId] = useState(item?.setDateId ?? "");
+  const [title, setTitle] = useState(item?.title ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const datesQuery = useQuery({
@@ -38,13 +38,6 @@ export function CheckEventFormModal({
     queryFn: () => setDatesService.list({ page: 1, limit: 200 }),
     enabled: open,
   });
-
-  useEffect(() => {
-    if (!open) return;
-    setSetDateId(item?.setDateId ?? "");
-    setTitle(item?.title ?? "");
-    setError(null);
-  }, [open, item]);
 
   const dateOptions = useMemo(
     () =>
@@ -107,6 +100,7 @@ export function CheckEventFormModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeDisabled={pending}
       title={isEdit ? "แก้ไขอีเวนต์วันเช็ค" : "สร้างอีเวนต์วันเช็ค"}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

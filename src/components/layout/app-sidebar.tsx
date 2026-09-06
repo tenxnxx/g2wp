@@ -8,8 +8,10 @@ import { useSidebar } from "@/context/sidebar-context";
 const MENU = [
   { href: "/", label: "แดชบอร์ด", hint: "Overview" },
   { href: "/members", label: "สมาชิก", hint: "Members" },
+  { href: "/groups", label: "กลุ่ม", hint: "Groups" },
   { href: "/players", label: "ตัวละคร", hint: "Players" },
   { href: "/behaviors", label: "พฤติกรรม", hint: "Behaviors" },
+  { href: "/reports", label: "รายงานพฤติกรรม", hint: "Reports" },
   { href: "/set-dates", label: "กำหนดวันเช็ค", hint: "Dates" },
   { href: "/check-events", label: "อีเวนต์เช็คชื่อ", hint: "Check Events" },
 ] as const;

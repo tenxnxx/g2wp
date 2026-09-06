@@ -126,10 +126,9 @@ export function CheckEventDetailClient({
   const canClose =
     event?.status === "open" && (event.counts.pending ?? 0) === 0;
 
-  useEffect(() => {
-    if (!meta) return;
-    if (page > meta.totalPages) setPage(meta.totalPages);
-  }, [meta, page]);
+  if (meta && page > meta.totalPages) {
+    setPage(meta.totalPages);
+  }
 
   if (eventQuery.isLoading) {
     return (

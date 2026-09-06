@@ -65,6 +65,9 @@ export function SearchableSelect({
     });
   }, [options, query]);
 
+  const safeHighlight =
+    filtered.length === 0 ? 0 : Math.min(highlight, filtered.length - 1);
+
   function updatePosition() {
     const rect = rootRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -75,11 +78,22 @@ export function SearchableSelect({
     });
   }
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
+  function openMenu() {
+    setQuery("");
+    setHighlight(0);
+    setOpen(true);
+  }
+
+  function toggleMenu() {
+    if (open) {
+      setOpen(false);
       return;
     }
+    openMenu();
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
     updatePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
@@ -91,8 +105,6 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (!open) return;
-    setQuery("");
-    setHighlight(0);
     const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [open]);
@@ -113,13 +125,6 @@ export function SearchableSelect({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
-  useEffect(() => {
-    setHighlight((prev) => {
-      if (filtered.length === 0) return 0;
-      return Math.min(prev, filtered.length - 1);
-    });
-  }, [filtered.length]);
-
   function selectOption(next: string) {
     onChange(next);
     setOpen(false);
@@ -133,7 +138,7 @@ export function SearchableSelect({
         event.key === " "
       ) {
         event.preventDefault();
-        setOpen(true);
+        openMenu();
       }
       return;
     }
@@ -164,7 +169,7 @@ export function SearchableSelect({
 
     if (event.key === "Enter") {
       event.preventDefault();
-      const option = filtered[highlight];
+      const option = filtered[safeHighlight];
       if (option) selectOption(option.value);
     }
   }
@@ -212,7 +217,7 @@ export function SearchableSelect({
               ) : (
                 filtered.map((option, index) => {
                   const active = option.value === value;
-                  const highlighted = index === highlight;
+                  const highlighted = index === safeHighlight;
                   return (
                     <li key={option.value} role="presentation">
                       <button
@@ -247,7 +252,7 @@ export function SearchableSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={toggleMenu}
         onKeyDown={onKeyDown}
         className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-3 text-left text-sm text-[var(--ink)] outline-none transition hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]"
       >

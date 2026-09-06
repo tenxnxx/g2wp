@@ -66,12 +66,9 @@ export function MemberTable({ onEdit }: MemberTableProps) {
   const meta = membersQuery.data?.meta;
   const members = membersQuery.data?.data ?? [];
 
-  useEffect(() => {
-    if (!meta) return;
-    if (page > meta.totalPages) {
-      setPage(meta.totalPages);
-    }
-  }, [meta, page]);
+  if (meta && page > meta.totalPages) {
+    setPage(meta.totalPages);
+  }
 
   if (membersQuery.isLoading && !membersQuery.data) {
     return (
@@ -143,6 +140,7 @@ export function MemberTable({ onEdit }: MemberTableProps) {
               <thead className="bg-[var(--surface-raised)] text-[11px] uppercase tracking-[0.08em] text-[var(--ink-muted)]">
                 <tr>
                   <th className="px-5 py-3 font-semibold">ชื่อ</th>
+                  <th className="px-5 py-3 font-semibold">กลุ่ม</th>
                   <th className="px-5 py-3 font-semibold">อายุ</th>
                   <th className="px-5 py-3 font-semibold">สถานะ</th>
                   <th className="px-5 py-3 font-semibold">Facebook</th>
@@ -159,6 +157,11 @@ export function MemberTable({ onEdit }: MemberTableProps) {
                   >
                     <td className="px-5 py-3 font-medium text-[var(--ink)]">
                       {member.name}
+                    </td>
+                    <td className="px-5 py-3 text-[var(--ink-muted)]">
+                      {member.groupName ?? (
+                        <span className="text-[var(--ink-faint)]">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-[var(--ink-muted)]">
                       {member.age}

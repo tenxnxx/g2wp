@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -53,12 +53,9 @@ export function SetDateTable({ onEdit }: SetDateTableProps) {
   const meta = listQuery.data?.meta;
   const items = listQuery.data?.data ?? [];
 
-  useEffect(() => {
-    if (!meta) return;
-    if (page > meta.totalPages) {
-      setPage(meta.totalPages);
-    }
-  }, [meta, page]);
+  if (meta && page > meta.totalPages) {
+    setPage(meta.totalPages);
+  }
 
   if (listQuery.isLoading && !listQuery.data) {
     return (

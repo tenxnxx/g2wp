@@ -6,6 +6,7 @@ import {
   buildPaginationMeta,
   getSkip,
   parsePaginationParams,
+  parseSearchQuery,
 } from "@/lib/pagination";
 import type { CheckMemberStatus } from "@/types/check-event";
 import type { Prisma } from "@/generated/prisma/client";
@@ -27,7 +28,7 @@ export async function GET(request: Request, { params }: Params) {
     const { page, limit } = parsePaginationParams(searchParams);
     const skip = getSkip(page, limit);
     const statusParam = searchParams.get("status")?.trim();
-    const q = searchParams.get("q")?.trim() || undefined;
+    const q = parseSearchQuery(searchParams);
 
     const status: CheckMemberStatus | undefined =
       statusParam === "pending" ||

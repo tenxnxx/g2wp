@@ -9,14 +9,17 @@ import type { CheckEvent } from "@/types/check-event";
 export function CheckEventsPageClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CheckEvent | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   function openCreate() {
     setEditing(null);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
   function openEdit(item: CheckEvent) {
     setEditing(item);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
@@ -41,6 +44,7 @@ export function CheckEventsPageClient() {
       <CheckEventTable onEdit={openEdit} />
 
       <CheckEventFormModal
+        key={formKey}
         open={modalOpen}
         item={editing}
         onClose={closeModal}

@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
+import { safeNextPath } from "@/lib/safe-next-path";
 import { authService } from "@/services/auth.service";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
-  const nextPath = searchParams.get("next") || "/";
+  const nextPath = safeNextPath(searchParams.get("next"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +25,7 @@ export function LoginForm() {
     mutationFn: authService.login,
     onSuccess: () => {
       toast.success("เข้าสู่ระบบสำเร็จ");
-      router.replace(nextPath.startsWith("/") ? nextPath : "/");
+      router.replace(nextPath);
       router.refresh();
     },
     onError: (err: Error) => {

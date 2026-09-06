@@ -70,6 +70,12 @@ export async function PATCH(request: Request, { params }: Params) {
       if (!name) {
         return NextResponse.json({ error: "name is required" }, { status: 400 });
       }
+      if (name.length > 100) {
+        return NextResponse.json(
+          { error: "ชื่อตัวละครยาวเกินไป (สูงสุด 100 ตัวอักษร)" },
+          { status: 400 },
+        );
+      }
       data.name = name;
     }
 

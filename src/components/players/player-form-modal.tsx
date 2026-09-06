@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { membersService } from "@/services/members.service";
 import { playersService } from "@/services/players.service";
 import type { Player } from "@/types/player";
@@ -28,8 +29,8 @@ export function PlayerFormModal({
   const toast = useToast();
   const isEdit = Boolean(player);
 
-  const [name, setName] = useState("");
-  const [memberId, setMemberId] = useState("");
+  const [name, setName] = useState(player?.name ?? "");
+  const [memberId, setMemberId] = useState(player?.memberId ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const membersQuery = useQuery({
@@ -37,13 +38,6 @@ export function PlayerFormModal({
     queryFn: () => membersService.list({ page: 1, limit: 200 }),
     enabled: open,
   });
-
-  useEffect(() => {
-    if (!open) return;
-    setName(player?.name ?? "");
-    setMemberId(player?.memberId ?? "");
-    setError(null);
-  }, [open, player]);
 
   const createMutation = useMutation({
     mutationFn: playersService.create,
@@ -77,7 +71,7 @@ export function PlayerFormModal({
   });
 
   const pending = createMutation.isPending || updateMutation.isPending;
-  const members = membersQuery.data?.data ?? [];
+  const members = membersQuery.data?.data ?? EMPTY_ARRAY;
   const memberOptions = useMemo(
     () =>
       members.map((member) => ({
@@ -108,6 +102,7 @@ export function PlayerFormModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeDisabled={pending}
       title={isEdit ? "แก้ไขตัวละคร" : "เพิ่มตัวละคร"}
       description={
         isEdit

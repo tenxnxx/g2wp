@@ -9,14 +9,17 @@ import type { Player } from "@/types/player";
 export function PlayersPageClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   function openCreate() {
     setEditing(null);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
   function openEdit(player: Player) {
     setEditing(player);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
@@ -41,6 +44,7 @@ export function PlayersPageClient() {
       <PlayerTable onEdit={openEdit} />
 
       <PlayerFormModal
+        key={formKey}
         open={modalOpen}
         player={editing}
         onClose={closeModal}

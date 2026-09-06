@@ -2,13 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
 import { displayHandle } from "@/lib/display";
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { dashboardService } from "@/services/dashboard.service";
 import type { MemberDetail } from "@/types/member";
 
@@ -222,23 +223,19 @@ export function DashboardPageClient() {
     queryFn: dashboardService.getOverview,
   });
 
-  const members = dashboardQuery.data?.members ?? [];
+  const members = dashboardQuery.data?.members ?? EMPTY_ARRAY;
   const [selectedId, setSelectedId] = useState<string>("");
-
-  useEffect(() => {
-    if (!members.length) {
-      setSelectedId("");
-      return;
-    }
-    if (!selectedId || !members.some((m) => m.id === selectedId)) {
-      setSelectedId(members[0].id);
-    }
-  }, [members, selectedId]);
+  const effectiveSelectedId =
+    members.length === 0
+      ? ""
+      : members.some((m) => m.id === selectedId)
+        ? selectedId
+        : members[0].id;
 
   const detailQuery = useQuery({
-    queryKey: ["dashboard", "member", selectedId],
-    queryFn: () => dashboardService.getMemberDetail(selectedId),
-    enabled: Boolean(selectedId),
+    queryKey: ["dashboard", "member", effectiveSelectedId],
+    queryFn: () => dashboardService.getMemberDetail(effectiveSelectedId),
+    enabled: Boolean(effectiveSelectedId),
   });
 
   const memberOptions = useMemo(
@@ -253,7 +250,7 @@ export function DashboardPageClient() {
 
   async function handleRefresh() {
     const result = await dashboardQuery.refetch();
-    if (selectedId) {
+    if (effectiveSelectedId) {
       await detailQuery.refetch();
     }
     if (result.isError) {
@@ -337,7 +334,7 @@ export function DashboardPageClient() {
             <Label htmlFor="dashboard-member">เลือกสมาชิก</Label>
             <SearchableSelect
               id="dashboard-member"
-              value={selectedId}
+              value={effectiveSelectedId}
               onChange={setSelectedId}
               options={memberOptions}
               placeholder="เลือกสมาชิก"

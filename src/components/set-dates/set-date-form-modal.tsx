@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,14 +26,8 @@ export function SetDateFormModal({
   const toast = useToast();
   const isEdit = Boolean(item);
 
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(item?.date ?? "");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setDate(item?.date ?? "");
-    setError(null);
-  }, [open, item]);
 
   const createMutation = useMutation({
     mutationFn: setDatesService.create,
@@ -83,6 +77,7 @@ export function SetDateFormModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeDisabled={pending}
       title={isEdit ? "แก้ไขวันเช็ค" : "เพิ่มวันเช็ค"}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

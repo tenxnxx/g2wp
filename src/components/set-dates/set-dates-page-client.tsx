@@ -9,14 +9,17 @@ import type { SetDate } from "@/types/set-date";
 export function SetDatesPageClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SetDate | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   function openCreate() {
     setEditing(null);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
   function openEdit(item: SetDate) {
     setEditing(item);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
@@ -41,6 +44,7 @@ export function SetDatesPageClient() {
       <SetDateTable onEdit={openEdit} />
 
       <SetDateFormModal
+        key={formKey}
         open={modalOpen}
         item={editing}
         onClose={closeModal}

@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/context/toast-context";
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { behaviorsService } from "@/services/behaviors.service";
 import { membersService } from "@/services/members.service";
 import { playersService } from "@/services/players.service";
@@ -29,9 +31,10 @@ export function BehaviorFormModal({
   const toast = useToast();
   const isEdit = Boolean(behavior);
 
-  const [description, setDescription] = useState("");
-  const [memberId, setMemberId] = useState("");
-  const [playerId, setPlayerId] = useState("");
+  const [description, setDescription] = useState(behavior?.description ?? "");
+  const [evidenceUrl, setEvidenceUrl] = useState(behavior?.evidenceUrl ?? "");
+  const [memberId, setMemberId] = useState(behavior?.memberId ?? "");
+  const [playerId, setPlayerId] = useState(behavior?.playerId ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const membersQuery = useQuery({
@@ -46,27 +49,6 @@ export function BehaviorFormModal({
       playersService.list({ page: 1, limit: 200, memberId }),
     enabled: open && Boolean(memberId),
   });
-
-  useEffect(() => {
-    if (!open) return;
-    setDescription(behavior?.description ?? "");
-    setMemberId(behavior?.memberId ?? "");
-    setPlayerId(behavior?.playerId ?? "");
-    setError(null);
-  }, [open, behavior]);
-
-  useEffect(() => {
-    if (!memberId) {
-      setPlayerId("");
-      return;
-    }
-    if (!playersQuery.isSuccess) return;
-
-    const players = playersQuery.data?.data ?? [];
-    if (playerId && !players.some((p) => p.id === playerId)) {
-      setPlayerId("");
-    }
-  }, [memberId, playerId, playersQuery.data, playersQuery.isSuccess]);
 
   const createMutation = useMutation({
     mutationFn: behaviorsService.create,
@@ -85,6 +67,7 @@ export function BehaviorFormModal({
   const updateMutation = useMutation({
     mutationFn: (input: {
       description: string;
+      evidenceUrl: string | null;
       memberId: string;
       playerId: string;
     }) => behaviorsService.update(behavior!.id, input),
@@ -101,8 +84,8 @@ export function BehaviorFormModal({
   });
 
   const pending = createMutation.isPending || updateMutation.isPending;
-  const members = membersQuery.data?.data ?? [];
-  const players = playersQuery.data?.data ?? [];
+  const members = membersQuery.data?.data ?? EMPTY_ARRAY;
+  const players = playersQuery.data?.data ?? EMPTY_ARRAY;
   const memberOptions = useMemo(
     () =>
       members.map((member) => ({
@@ -122,6 +105,11 @@ export function BehaviorFormModal({
     [players],
   );
 
+  function onMemberChange(next: string) {
+    setMemberId(next);
+    setPlayerId("");
+  }
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!description.trim() || !memberId || !playerId) {
@@ -131,6 +119,7 @@ export function BehaviorFormModal({
 
     const payload = {
       description: description.trim(),
+      evidenceUrl: evidenceUrl.trim() || null,
       memberId,
       playerId,
     };
@@ -146,6 +135,7 @@ export function BehaviorFormModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeDisabled={pending}
       title={isEdit ? "แก้ไขพฤติกรรม" : "เพิ่มพฤติกรรม"}
       description={
         isEdit
@@ -197,6 +187,19 @@ export function BehaviorFormModal({
         </div>
 
         <div>
+          <Label htmlFor="behavior-evidence">แนบหลักฐาน (ไม่บังคับ)</Label>
+          <Input
+            id="behavior-evidence"
+            type="url"
+            value={evidenceUrl}
+            onChange={(e) => setEvidenceUrl(e.target.value)}
+            placeholder="https://youtube.com/... หรือลิงก์คลิปอื่น"
+            inputMode="url"
+            autoComplete="off"
+          />
+        </div>
+
+        <div>
           <Label htmlFor="behavior-member">สมาชิก *</Label>
           {membersQuery.isLoading ? (
             <div className="flex h-10 items-center gap-2 text-sm text-[var(--ink-muted)]">
@@ -211,10 +214,7 @@ export function BehaviorFormModal({
             <SearchableSelect
               id="behavior-member"
               value={memberId}
-              onChange={(next) => {
-                setMemberId(next);
-                setPlayerId("");
-              }}
+              onChange={onMemberChange}
               options={memberOptions}
               placeholder="เลือกสมาชิก"
               searchPlaceholder="ค้นหาด้วยชื่อสมาชิก..."

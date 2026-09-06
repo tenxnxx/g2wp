@@ -9,14 +9,17 @@ import type { Behavior } from "@/types/behavior";
 export function BehaviorsPageClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Behavior | null>(null);
+  const [formKey, setFormKey] = useState(0);
 
   function openCreate() {
     setEditing(null);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
   function openEdit(behavior: Behavior) {
     setEditing(behavior);
+    setFormKey((k) => k + 1);
     setModalOpen(true);
   }
 
@@ -41,6 +44,7 @@ export function BehaviorsPageClient() {
       <BehaviorTable onEdit={openEdit} />
 
       <BehaviorFormModal
+        key={formKey}
         open={modalOpen}
         behavior={editing}
         onClose={closeModal}

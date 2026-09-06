@@ -1,13 +1,16 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
+import { EMPTY_ARRAY } from "@/lib/empty";
+import { groupsService } from "@/services/groups.service";
 import { membersService } from "@/services/members.service";
 import type { Member } from "@/types/member";
 
@@ -26,26 +29,53 @@ export function MemberFormModal({
   const toast = useToast();
   const isEdit = Boolean(member);
 
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("");
-  const [facebookUrl, setFacebookUrl] = useState("");
-  const [isLive, setIsLive] = useState(true);
+  const [name, setName] = useState(member?.name ?? "");
+  const [age, setAge] = useState(member ? String(member.age) : "");
+  const [facebookUrl, setFacebookUrl] = useState(member?.facebookUrl ?? "");
+  const [isLive, setIsLive] = useState(member?.isLive ?? true);
+  const [groupId, setGroupId] = useState(member?.groupId ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setName(member?.name ?? "");
-    setAge(member ? String(member.age) : "");
-    setFacebookUrl(member?.facebookUrl ?? "");
-    setIsLive(member?.isLive ?? true);
-    setError(null);
-  }, [open, member]);
+  const groupsQuery = useQuery({
+    queryKey: ["groups", "options", "isUse", open, member?.groupId],
+    queryFn: () => groupsService.list({ page: 1, limit: 200, isUse: true }),
+    enabled: open,
+  });
+
+  const groupRows = groupsQuery.data?.data ?? EMPTY_ARRAY;
+  const groupOptions = useMemo(() => {
+    const options = [
+      { value: "", label: "ไม่ระบุกลุ่ม" },
+      ...groupRows.map((g) => ({
+        value: g.id,
+        label: g.groupName,
+        keywords: g.groupName,
+      })),
+    ];
+    if (
+      member?.groupId &&
+      member.groupName &&
+      !options.some((o) => o.value === member.groupId)
+    ) {
+      return [
+        options[0],
+        {
+          value: member.groupId,
+          label: `${member.groupName} (ปิดใช้งาน)`,
+          keywords: member.groupName,
+        },
+        ...options.slice(1),
+      ];
+    }
+    return options;
+  }, [groupRows, member]);
 
   const createMutation = useMutation({
     mutationFn: membersService.create,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["members"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["groups"] });
       toast.success("เพิ่มสมาชิกแล้ว");
       onClose();
     },
@@ -61,10 +91,12 @@ export function MemberFormModal({
       age: number;
       facebookUrl: string | null;
       isLive: boolean;
+      groupId: string | null;
     }) => membersService.update(member!.id, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["members"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["groups"] });
       toast.success("บันทึกการแก้ไขสมาชิกแล้ว");
       onClose();
     },
@@ -79,8 +111,12 @@ export function MemberFormModal({
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsedAge = Number(age);
-    if (!name.trim() || !Number.isInteger(parsedAge) || parsedAge < 0) {
-      setError("กรอกชื่อและอายุให้ถูกต้อง");
+    if (!name.trim()) {
+      setError("กรอกชื่อสมาชิก");
+      return;
+    }
+    if (!Number.isInteger(parsedAge) || parsedAge < 0 || parsedAge > 150) {
+      setError("อายุต้องเป็นจำนวนเต็มระหว่าง 0–150 ปี");
       return;
     }
 
@@ -89,6 +125,7 @@ export function MemberFormModal({
       age: parsedAge,
       facebookUrl: facebookUrl.trim() || null,
       isLive,
+      groupId: groupId.trim() || null,
     };
 
     if (isEdit) {
@@ -102,6 +139,7 @@ export function MemberFormModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeDisabled={pending}
       title={isEdit ? "แก้ไขสมาชิก" : "เพิ่มสมาชิก"}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -153,11 +191,32 @@ export function MemberFormModal({
             id="member-age"
             type="number"
             min={0}
+            max={150}
             value={age}
             onChange={(e) => setAge(e.target.value)}
-            placeholder="เช่น 25"
+            placeholder="เช่น 25 (สูงสุด 150)"
             required
           />
+        </div>
+
+        <div>
+          <Label htmlFor="member-group">กลุ่ม</Label>
+          {groupsQuery.isLoading ? (
+            <div className="mt-2 flex items-center gap-2 text-sm text-[var(--ink-muted)]">
+              <Spinner />
+              กำลังโหลดกลุ่ม...
+            </div>
+          ) : (
+            <SearchableSelect
+              id="member-group"
+              value={groupId}
+              onChange={setGroupId}
+              options={groupOptions}
+              placeholder="เลือกกลุ่ม"
+              searchPlaceholder="ค้นหาชื่อกลุ่ม..."
+              emptyMessage="ไม่พบกลุ่ม"
+            />
+          )}
         </div>
 
         <div>

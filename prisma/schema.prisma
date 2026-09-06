@@ -22,33 +22,57 @@ enum CheckMemberStatus {
   cancelled
 }
 
+enum BehaviorReportStatus {
+  pending
+  approved
+  cancelled
+}
+
 model Member {
   id                String             @id @default(cuid())
   name              String
   age               Int
   facebookUrl       String?            @map("facebook_url")
   isLive            Boolean            @default(true) @map("is_live")
+  groupId           String?            @map("group_id")
   createBy          String             @map("create_by")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
+  group             Group?             @relation(fields: [groupId], references: [id], onDelete: SetNull)
   players           Player[]
   behaviors         Behavior[]
   checkEventMembers CheckEventMember[]
+  behaviorReports   BehaviorReport[]
 
   @@index([name])
   @@index([isLive])
+  @@index([groupId])
   @@map("members")
 }
 
+model Group {
+  id        String   @id @default(cuid())
+  groupName String   @map("group_name")
+  isUse     Boolean  @default(true) @map("is_use")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  members   Member[]
+
+  @@index([groupName])
+  @@index([isUse])
+  @@map("groups")
+}
+
 model Player {
-  id        String     @id @default(cuid())
-  name      String
-  memberId  String     @map("member_id")
-  member    Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  createBy  String     @map("create_by")
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
-  behaviors Behavior[]
+  id              String           @id @default(cuid())
+  name            String
+  memberId        String           @map("member_id")
+  member          Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createBy        String           @map("create_by")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  behaviors       Behavior[]
+  behaviorReports BehaviorReport[]
 
   @@index([memberId])
   @@index([name])
@@ -56,20 +80,48 @@ model Player {
 }
 
 model Behavior {
-  id          String   @id @default(cuid())
-  description String
-  createBy    String   @map("create_by")
-  memberId    String   @map("member_id")
-  playerId    String   @map("player_id")
-  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String          @id @default(cuid())
+  description  String
+  evidenceUrl  String?         @map("evidence_url")
+  createBy     String          @map("create_by")
+  memberId     String          @map("member_id")
+  playerId     String          @map("player_id")
+  member       Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  player       Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  sourceReport BehaviorReport?
 
   @@index([memberId])
   @@index([playerId])
   @@index([description])
   @@map("behaviors")
+}
+
+model BehaviorReport {
+  id             String               @id @default(cuid())
+  memberId       String               @map("member_id")
+  playerId       String               @map("player_id")
+  message        String
+  evidenceUrl    String?              @map("evidence_url")
+  status         BehaviorReportStatus @default(pending)
+  memberNameSnap String               @map("member_name_snap")
+  playerNameSnap String               @map("player_name_snap")
+  decidedBy      String?              @map("decided_by")
+  decidedAt      DateTime?            @map("decided_at")
+  decisionNote   String?              @map("decision_note")
+  behaviorId     String?              @unique @map("behavior_id")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  member         Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  player         Player               @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  behavior       Behavior?            @relation(fields: [behaviorId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([memberId])
+  @@index([playerId])
+  @@index([createdAt])
+  @@map("behavior_reports")
 }
 
 model SetDate {

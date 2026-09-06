@@ -1,5 +1,6 @@
 [build]
-  command = "npm run build"
+  # Requires DIRECT_URL (and DATABASE_URL) in Netlify env for migrate deploy
+  command = "npm run build:release"
   publish = ".next"
 
 [[plugins]]

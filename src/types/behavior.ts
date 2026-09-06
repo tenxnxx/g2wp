@@ -11,6 +11,7 @@ export type BehaviorPlayer = {
 export type Behavior = {
   id: string;
   description: string;
+  evidenceUrl: string | null;
   createBy: string;
   memberId: string;
   playerId: string;
@@ -22,6 +23,7 @@ export type Behavior = {
 
 export type CreateBehaviorInput = {
   description: string;
+  evidenceUrl?: string | null;
   memberId: string;
   playerId: string;
 };
