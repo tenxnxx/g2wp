@@ -43,6 +43,7 @@ model Member {
   behaviors         Behavior[]
   checkEventMembers CheckEventMember[]
   behaviorReports   BehaviorReport[]
+  safes             Safe[]
 
   @@index([name])
   @@index([isLive])
@@ -172,4 +173,33 @@ model CheckEventMember {
   @@index([memberId])
   @@index([status])
   @@map("check_event_members")
+}
+
+model Item {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  safes     Safe[]
+
+  @@index([name])
+  @@map("items")
+}
+
+model Safe {
+  id            String   @id @default(cuid())
+  itemId        String   @map("item_id")
+  quantity      Int
+  description   String?
+  depositItemAt DateTime @map("deposit_item_at")
+  memberId      String   @map("member_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  item          Item     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([itemId])
+  @@index([memberId])
+  @@index([depositItemAt])
+  @@map("safes")
 }

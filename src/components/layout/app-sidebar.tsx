@@ -9,6 +9,8 @@ const MENU = [
   { href: "/", label: "แดชบอร์ด", hint: "Overview" },
   { href: "/members", label: "สมาชิก", hint: "Members" },
   { href: "/groups", label: "กลุ่ม", hint: "Groups" },
+  { href: "/items", label: "ไอเท็ม", hint: "Items" },
+  { href: "/safes", label: "ตู้เซฟ", hint: "Safes" },
   { href: "/players", label: "ตัวละคร", hint: "Players" },
   { href: "/behaviors", label: "พฤติกรรม", hint: "Behaviors" },
   { href: "/reports", label: "รายงานพฤติกรรม", hint: "Reports" },
