@@ -6,6 +6,10 @@ import {
   serializeCheckEvent,
 } from "@/lib/check-events";
 import { prisma } from "@/lib/db";
+import {
+  CHECK_EVENT_MEMBER_BATCH,
+  CHECK_EVENT_OPEN_MEMBERS_MAX,
+} from "@/lib/field-limits";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,18 +20,28 @@ export async function POST(_request: Request, { params }: Params) {
 
     const { id } = await params;
 
-    const liveMembers = await prisma.member.findMany({
-      where: { isLive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-
-    if (liveMembers.length === 0) {
+    const liveCount = await prisma.member.count({ where: { isLive: true } });
+    if (liveCount === 0) {
       return NextResponse.json(
         { error: "No live members to check" },
         { status: 400 },
       );
     }
+    if (liveCount > CHECK_EVENT_OPEN_MEMBERS_MAX) {
+      return NextResponse.json(
+        {
+          error: `สมาชิกที่อยู่ในแคลนมีเกิน ${CHECK_EVENT_OPEN_MEMBERS_MAX} คน — ลดจำนวนหรือแบ่งอีเวนต์`,
+        },
+        { status: 400 },
+      );
+    }
+
+    const liveMembers = await prisma.member.findMany({
+      where: { isLive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+      take: CHECK_EVENT_OPEN_MEMBERS_MAX,
+    });
 
     const opened = await prisma.$transaction(async (tx) => {
       const otherOpen = await tx.checkEvent.findFirst({
@@ -55,14 +69,17 @@ export async function POST(_request: Request, { params }: Params) {
         throw new BadRequestError("Only draft events can be opened");
       }
 
-      await tx.checkEventMember.createMany({
-        data: liveMembers.map((member) => ({
-          checkEventId: id,
-          memberId: member.id,
-          memberNameSnapshot: member.name,
-          status: "pending" as const,
-        })),
-      });
+      for (let i = 0; i < liveMembers.length; i += CHECK_EVENT_MEMBER_BATCH) {
+        const batch = liveMembers.slice(i, i + CHECK_EVENT_MEMBER_BATCH);
+        await tx.checkEventMember.createMany({
+          data: batch.map((member) => ({
+            checkEventId: id,
+            memberId: member.id,
+            memberNameSnapshot: member.name,
+            status: "pending" as const,
+          })),
+        });
+      }
 
       return tx.checkEvent.findUniqueOrThrow({
         where: { id },

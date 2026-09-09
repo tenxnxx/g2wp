@@ -16,7 +16,11 @@ import {
 export async function POST(request: Request) {
   try {
     maybeSweepRateLimits();
-    const limited = rateLimit(`public:report:${clientIp(request)}`, 5, 60_000);
+    const limited = await rateLimit(
+      `public:report:${clientIp(request)}`,
+      5,
+      60_000,
+    );
     if (!limited.ok) {
       return NextResponse.json(
         { error: "ส่งรายงานบ่อยเกินไป ลองใหม่ภายหลัง" },

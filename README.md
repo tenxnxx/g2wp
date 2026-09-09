@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# member_warzth (WarZTH / G2WP)
 
-## Getting Started
+แอดมินจัดการสมาชิกแคลน — สมาชิก, กลุ่ม, ตัวละคร, พฤติกรรม, รายงานสาธารณะ, อีเวนต์เช็คชื่อ, ไอเท็ม/ตู้เซฟ
 
-First, run the development server:
+Stack: Next.js 16 · React 19 · Prisma 7 · Supabase Auth/Postgres · TanStack Query · Tailwind 4 · Netlify
+
+## Dev
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # ใส่ค่าจริง — ห้าม commit secrets
+npm install
+npx prisma generate
+npm run dev                  # http://localhost:8000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Env ที่ต้องมี
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| ตัวแปร | ความหมาย |
+|--------|----------|
+| `DATABASE_URL` | Postgres pooler (แอป) |
+| `DIRECT_URL` | Postgres direct (migrate) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key |
+| `ADMIN_EMAILS` | อีเมลแอดมิน คั่นด้วย `,` — **บังคับใน production** |
+| `UPSTASH_REDIS_REST_URL` / `TOKEN` | (ไม่บังคับ) rate limit ข้าม instance |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+หรือตั้ง `app_metadata.role = "admin"` ใน Supabase Auth
 
-## Learn More
+## Auth / ขอบเขตสาธารณะ
 
-To learn more about Next.js, take a look at the following resources:
+- Edge guard: `src/proxy.ts` → `updateSession` (Next.js 16 ใช้ชื่อ Proxy แทน Middleware)
+- API แอดมิน: `requireAuth()` + allowlist
+- สาธารณะ: `/report`, `/api/public/*`, `/login`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy (Netlify)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build:release   # migrate deploy + generate + next build
+```
 
-## Deploy on Vercel
+ตั้ง env บน Netlify ให้ครบ รวม `ADMIN_EMAILS` และ `DIRECT_URL`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+ตัวอย่างตั้งค่า (หลัง `netlify link`):
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx netlify env:set ADMIN_EMAILS "tenx@g2wp.com"
+```
+
+## Scripts
+
+| Script | ใช้ทำอะไร |
+|--------|-----------|
+| `npm run dev` | พัฒนาพอร์ต 8000 |
+| `npm run build` | generate + build |
+| `npm run build:release` | migrate + generate + build |
+| `npm run db:deploy` | `prisma migrate deploy` |
+| `npm run smoke:auth` | ตรวจว่า API แอดมินบล็อกเมื่อไม่ล็อกอิน |
+
+```bash
+# local (ต้องมี npm run dev)
+npm run smoke:auth
+
+# production
+SMOKE_BASE_URL=https://YOUR_SITE.netlify.app npm run smoke:auth
+```
+
+## Security notes
+
+- `.env.example` ต้องเป็น placeholder เท่านั้น
+- ถ้าเคยใส่รหัสจริงใน git → **หมุนรหัส DB / ทบทวน keys ทันที**

@@ -10,7 +10,11 @@ import {
 export async function GET(request: Request) {
   try {
     maybeSweepRateLimits();
-    const limited = rateLimit(`public:options:${clientIp(request)}`, 30, 60_000);
+    const limited = await rateLimit(
+      `public:options:${clientIp(request)}`,
+      30,
+      60_000,
+    );
     if (!limited.ok) {
       return NextResponse.json(
         { error: "คำขอมากเกินไป ลองใหม่ภายหลัง" },

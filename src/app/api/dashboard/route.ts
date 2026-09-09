@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
+import { DASHBOARD_MEMBERS_MAX } from "@/lib/field-limits";
 
 export async function GET() {
   try {
@@ -14,7 +15,7 @@ export async function GET() {
         prisma.behavior.count(),
         prisma.member.findMany({
           orderBy: { createdAt: "desc" },
-          take: 100,
+          take: DASHBOARD_MEMBERS_MAX,
           select: {
             id: true,
             name: true,

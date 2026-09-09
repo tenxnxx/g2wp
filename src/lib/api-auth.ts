@@ -12,14 +12,21 @@ function adminEmailAllowlist(): string[] {
     .filter(Boolean);
 }
 
+function mustUseAllowlist(): boolean {
+  return (
+    process.env.NODE_ENV === "production" ||
+    process.env.REQUIRE_ADMIN_ALLOWLIST === "1"
+  );
+}
+
 function isAllowedAdmin(user: User): boolean {
   const role = user.app_metadata?.role;
   if (role === "admin") return true;
 
   const allowlist = adminEmailAllowlist();
   if (allowlist.length === 0) {
-    // Local/dev convenience: any authenticated user. Production should set ADMIN_EMAILS.
-    return true;
+    // Fail closed in production / when REQUIRE_ADMIN_ALLOWLIST=1
+    return !mustUseAllowlist();
   }
 
   const email = user.email?.toLowerCase();
@@ -41,9 +48,14 @@ export async function requireAuth(): Promise<
   }
 
   if (!isAllowedAdmin(user)) {
+    const emptyAllowlist = adminEmailAllowlist().length === 0 && mustUseAllowlist();
     return {
       error: NextResponse.json(
-        { error: "Forbidden — ไม่มีสิทธิ์แอดมิน" },
+        {
+          error: emptyAllowlist
+            ? "Forbidden — ตั้ง ADMIN_EMAILS ใน production"
+            : "Forbidden — ไม่มีสิทธิ์แอดมิน",
+        },
         { status: 403 },
       ),
     };

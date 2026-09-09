@@ -1,6 +1,9 @@
 /**
- * Simple in-memory rate limiter (per server instance).
- * Good enough for small Netlify/Node deployments; use Redis/Upstash for multi-instance.
+ * Rate limiter: Upstash Redis REST when configured, else in-memory (per instance).
+ *
+ * Env (optional):
+ *   UPSTASH_REDIS_REST_URL
+ *   UPSTASH_REDIS_REST_TOKEN
  */
 
 type Bucket = { count: number; resetAt: number };
@@ -11,7 +14,7 @@ export type RateLimitResult =
   | { ok: true; remaining: number; resetAt: number }
   | { ok: false; remaining: 0; resetAt: number; retryAfterSec: number };
 
-export function rateLimit(
+function memoryRateLimit(
   key: string,
   limit: number,
   windowMs: number,
@@ -42,6 +45,71 @@ export function rateLimit(
   };
 }
 
+async function upstashRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitResult | null> {
+  const base = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!base || !token) return null;
+
+  const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
+  const redisKey = `rl:${key}`;
+
+  try {
+    const res = await fetch(`${base}/pipeline`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([
+        ["INCR", redisKey],
+        ["EXPIRE", redisKey, windowSec, "NX"],
+        ["TTL", redisKey],
+      ]),
+      cache: "no-store",
+    });
+
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as Array<{ result: number }>;
+    const count = Number(data[0]?.result ?? 0);
+    const ttl = Number(data[2]?.result ?? windowSec);
+    const retryAfterSec = ttl > 0 ? ttl : windowSec;
+    const resetAt = Date.now() + retryAfterSec * 1000;
+
+    if (count > limit) {
+      return {
+        ok: false,
+        remaining: 0,
+        resetAt,
+        retryAfterSec: Math.max(1, retryAfterSec),
+      };
+    }
+
+    return {
+      ok: true,
+      remaining: Math.max(0, limit - count),
+      resetAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Prefer Upstash when configured; fall back to in-memory. */
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitResult> {
+  const remote = await upstashRateLimit(key, limit, windowMs);
+  if (remote) return remote;
+  return memoryRateLimit(key, limit, windowMs);
+}
+
 export function clientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -53,7 +121,6 @@ export function clientIp(request: Request): string {
   return "unknown";
 }
 
-/** Periodic cleanup to avoid unbounded Map growth in long-lived processes. */
 const CLEAN_EVERY = 200;
 let ops = 0;
 export function maybeSweepRateLimits() {
