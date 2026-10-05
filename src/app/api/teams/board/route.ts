@@ -10,6 +10,7 @@ import {
   fillTeams,
   loadTeamBoard,
   loadTeamBoardView,
+  withOwnPlayers,
   moveAssignment,
   removeTeam,
   reorderTeams,
@@ -32,7 +33,7 @@ export async function GET() {
           ? loadTeamBoard(actorLabel(auth.user))
           : loadTeamBoardView(),
     );
-    return NextResponse.json(board);
+    return NextResponse.json(await withOwnPlayers(board, auth.user.id));
   } catch (error) {
     console.error("GET /api/teams/board", error);
     return prismaErrorResponse(error, "Failed to load team board");
@@ -44,9 +45,9 @@ export async function POST(request: Request) {
     const auth = await requireAuth();
     if (auth.error) return auth.error;
     const actor = actorLabel(auth.user);
-    const saved = async (body: unknown) => {
+    const saved = async (body: Awaited<ReturnType<typeof loadTeamBoard>>) => {
       await invalidateResource("teams");
-      return NextResponse.json(body);
+      return NextResponse.json(await withOwnPlayers(body, auth.user.id));
     };
 
     const bodyResult = await readJsonBody(request);

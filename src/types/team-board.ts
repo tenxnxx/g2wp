@@ -7,9 +7,11 @@ export type TeamSessionStatus = "draft" | "active" | "completed";
 export type BoardPlayer = {
   assignmentId: string;
   playerId: string;
+  memberId: string;
   name: string;
   memberName: string;
   sortOrder: number;
+  mine: boolean;
 };
 
 export type TeamColumn = {

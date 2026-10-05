@@ -79,14 +79,39 @@ function toPlayer(row: {
   id: string;
   playerId: string;
   sortOrder: number;
-  player: { name: string; member: { name: string } };
+  player: { name: string; memberId: string; member: { name: string } };
 }): BoardPlayer {
   return {
     assignmentId: row.id,
     playerId: row.playerId,
+    memberId: row.player.memberId,
     name: row.player.name,
     memberName: row.player.member.name,
     sortOrder: row.sortOrder,
+    mine: false,
+  };
+}
+
+/** Mark characters that belong to the signed-in user's member. */
+export async function withOwnPlayers(board: TeamBoard, userId: string): Promise<TeamBoard> {
+  const owner = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { memberId: true },
+  });
+  const memberId = owner?.memberId ?? null;
+  const mark = (player: BoardPlayer): BoardPlayer => ({
+    ...player,
+    mine: memberId !== null && player.memberId === memberId,
+  });
+  return {
+    ...board,
+    waiting: board.waiting.map(mark),
+    inactive: board.inactive.map(mark),
+    teams: board.teams.map((team) => ({
+      ...team,
+      main: team.main.map(mark),
+      reserve: team.reserve.map(mark),
+    })),
   };
 }
 
@@ -177,7 +202,7 @@ function groupBoard(
     teamId: string | null;
     slotType: TeamSlotType;
     sortOrder: number;
-    player: { name: string; member: { name: string } };
+    player: { name: string; memberId: string; member: { name: string } };
   }[],
 ): TeamBoard {
   const columns = new Map<string, TeamColumn>(

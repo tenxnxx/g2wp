@@ -73,9 +73,15 @@ function EmptySlot({ onClick, editable }: { onClick: () => void; editable: boole
   );
 }
 
-function PlayerFace({ name }: { name: string }) {
+function PlayerFace({ name, mine }: { name: string; mine: boolean }) {
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--line)] bg-[var(--surface-hover)] text-[11px] font-semibold text-[var(--accent-strong)]">
+    <span
+      className={`grid size-9 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
+        mine
+          ? "border-[#d7b65a] bg-[#fff8dc] text-[#6b5420]"
+          : "border-[var(--line)] bg-[var(--surface-hover)] text-[var(--accent-strong)]"
+      }`}
+    >
       {initials(name)}
     </span>
   );
@@ -95,8 +101,10 @@ function PlayerChip({
   onSwap: (sourceId: string, targetId: string) => void;
 }) {
   const [over, setOver] = useState(false);
+  const mine = player.mine;
   return (
     <div
+      title={mine ? "ตัวละครของคุณ" : undefined}
       draggable={editable}
       onDragStart={
         editable
@@ -145,24 +153,38 @@ function PlayerChip({
       } ${
         over && editable
           ? "border-[var(--accent-strong)] bg-[var(--surface-hover)]"
-          : "border-[var(--line)] bg-[var(--surface)]"
+          : mine
+            ? "border-[#e2c56a] bg-[#f8e7a4]"
+            : "border-[var(--line)] bg-[var(--surface)]"
       }`}
     >
-      <PlayerFace name={player.name} />
+      <PlayerFace name={player.name} mine={mine && !(over && editable)} />
       <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1 text-sm font-medium text-[var(--ink)]">
+        <span
+          className={`flex min-w-0 items-center gap-1 text-sm font-medium ${
+            mine && !(over && editable) ? "text-[#3f3214]" : "text-[var(--ink)]"
+          }`}
+        >
           <span className="truncate">{player.name}</span>
           {crowned ? (
             <span
               aria-label="หัวหน้าทีม"
               title="หัวหน้าทีม"
-              className="shrink-0 text-base leading-none text-[#f5c451] drop-shadow-[0_0_6px_rgba(245,196,81,0.65)]"
+              className={`shrink-0 text-base leading-none ${
+                mine && !(over && editable)
+                  ? "text-[#8a6412]"
+                  : "text-[#f5c451] drop-shadow-[0_0_6px_rgba(245,196,81,0.65)]"
+              }`}
             >
               ♔
             </span>
           ) : null}
         </span>
-        <span className="block truncate text-[11px] text-[var(--ink-muted)]">
+        <span
+          className={`block truncate text-[11px] ${
+            mine && !(over && editable) ? "text-[#6d5a2e]" : "text-[var(--ink-muted)]"
+          }`}
+        >
           {player.memberName}
         </span>
       </span>
@@ -816,7 +838,10 @@ export function TeamsPageClient() {
               <button
                 key={player.assignmentId}
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-hover)]"
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-hover)] ${
+                  player.mine ? "bg-[#f8e7a4] text-[#3f3214]" : ""
+                }`}
+                title={player.mine ? "ตัวละครของคุณ" : undefined}
                 onClick={() => {
                   if (!picker) return;
                   const target = picker;
@@ -831,10 +856,16 @@ export function TeamsPageClient() {
                   );
                 }}
               >
-                <PlayerFace name={player.name} />
+                <PlayerFace name={player.name} mine={player.mine} />
                 <span>
                   <span className="block text-sm">{player.name}</span>
-                  <span className="block text-xs text-[var(--ink-muted)]">{player.memberName}</span>
+                  <span
+                    className={`block text-xs ${
+                      player.mine ? "text-[#6d5a2e]" : "text-[var(--ink-muted)]"
+                    }`}
+                  >
+                    {player.memberName}
+                  </span>
                 </span>
               </button>
             ))
