@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
+import { getSupabaseUrl } from "@/lib/supabase/env";
 
 const authOptions = {
   auth: {
@@ -23,30 +23,26 @@ function mapAuthError(message: string): string {
   return "สร้างบัญชีไม่สำเร็จ";
 }
 
-/** Creates a Supabase Auth user without touching the admin's browser session. */
+/** Creates a confirmed Supabase Auth user without touching the admin's browser session. */
 export async function createAuthAccount(
   email: string,
   password: string,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (serviceKey) {
-    const admin = createClient(getSupabaseUrl(), serviceKey, authOptions);
-    const { data, error } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-    });
-    if (error) return { ok: false, error: mapAuthError(error.message) };
-    if (!data.user?.id) return { ok: false, error: "สร้างบัญชีไม่สำเร็จ" };
-    return { ok: true, id: data.user.id };
+  if (!serviceKey) {
+    return {
+      ok: false,
+      error: "ระบบยังยืนยันอีเมลอัตโนมัติไม่ได้",
+    };
   }
 
-  const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey(), authOptions);
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const admin = createClient(getSupabaseUrl(), serviceKey, authOptions);
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
   if (error) return { ok: false, error: mapAuthError(error.message) };
   if (!data.user?.id) return { ok: false, error: "สร้างบัญชีไม่สำเร็จ" };
-  if (data.user.identities && data.user.identities.length === 0) {
-    return { ok: false, error: "อีเมลนี้มีบัญชีอยู่แล้ว" };
-  }
   return { ok: true, id: data.user.id };
 }
