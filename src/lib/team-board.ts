@@ -223,6 +223,33 @@ function groupBoard(
   };
 }
 
+/** Read the open board without creating a round or attaching players. */
+export async function loadTeamBoardView(): Promise<TeamBoard> {
+  const session = await prisma.teamSession.findFirst({
+    where: {
+      status: { in: [TeamSessionStatus.active, TeamSessionStatus.draft] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  const teams = await prisma.team.findMany({
+    where: { isUse: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, sortOrder: true, mainLimit: true, reserveLimit: true },
+  });
+  if (!session) {
+    return groupBoard(
+      { id: "", title: null, status: TeamSessionStatus.draft },
+      teams,
+      [],
+    );
+  }
+  const rows = await prisma.teamAssignment.findMany({
+    where: { sessionId: session.id },
+    include: { player: { include: { member: { select: { name: true } } } } },
+  });
+  return groupBoard(session, teams, rows);
+}
+
 export async function loadTeamBoard(actor: string): Promise<TeamBoard> {
   const session = await openSession(actor);
   const [assignmentCount, playerCount] = await Promise.all([

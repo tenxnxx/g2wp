@@ -6,14 +6,10 @@ import { peekAppAccess } from "@/lib/app-users";
 import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
 import { safeNextPath } from "@/lib/safe-next-path";
 
+const USER_PAGE = "/teams";
+
 function normalUserMayCallApi(request: NextRequest): boolean {
-  if (request.method !== "GET") return false;
-  const pathname = request.nextUrl.pathname;
-  if (pathname === "/api/dashboard") return true;
-  return (
-    /^\/api\/members\/[^/]+$/.test(pathname) &&
-    request.nextUrl.searchParams.get("detail") === "1"
-  );
+  return request.method === "GET" && request.nextUrl.pathname === "/api/teams/board";
 }
 
 export async function updateSession(request: NextRequest) {
@@ -93,12 +89,12 @@ export async function updateSession(request: NextRequest) {
   if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
-    url.pathname = admin || next === "/" ? next : "/";
+    url.pathname = admin ? (next === "/" ? USER_PAGE : next) : USER_PAGE;
     url.search = "";
     return NextResponse.redirect(url);
   }
 
-  if (user && !admin && !isPublic && pathname !== "/") {
+  if (user && !admin && !isPublic && pathname !== USER_PAGE) {
     if (isApi) {
       if (normalUserMayCallApi(request)) return supabaseResponse;
       return NextResponse.json(
@@ -107,7 +103,7 @@ export async function updateSession(request: NextRequest) {
       );
     }
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = USER_PAGE;
     url.search = "";
     return NextResponse.redirect(url);
   }

@@ -7,7 +7,8 @@ import { useIsAdmin } from "@/context/role-context";
 import { useSidebar } from "@/context/sidebar-context";
 
 const MENU = [
-  { href: "/", label: "แดชบอร์ด", hint: "Overview" },
+  { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
+  { href: "/dashboard", label: "แดชบอร์ด", hint: "Overview" },
   { href: "/users", label: "ผู้ใช้", hint: "Users" },
   { href: "/members", label: "สมาชิก", hint: "Members" },
   { href: "/groups", label: "กลุ่ม", hint: "Groups" },
@@ -15,7 +16,6 @@ const MENU = [
   { href: "/items", label: "ไอเท็ม", hint: "Items" },
   { href: "/safes", label: "ตู้เซฟ", hint: "Safes" },
   { href: "/players", label: "ตัวละคร", hint: "Players" },
-  { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
   { href: "/behaviors", label: "พฤติกรรม", hint: "Behaviors" },
   { href: "/reports", label: "รายงานพฤติกรรม", hint: "Reports" },
   { href: "/set-dates", label: "กำหนดวันเช็ค", hint: "Dates" },
@@ -25,7 +25,9 @@ const MENU = [
 export function AppSidebar() {
   const pathname = usePathname();
   const isAdmin = useIsAdmin();
-  const menu = isAdmin ? MENU : MENU.filter((item) => item.href === "/");
+  const menu = isAdmin
+    ? MENU
+    : [{ href: "/teams", label: "จัดทีม", hint: "Team Manager" }];
   const {
     desktopExpanded,
     mobileOpen,
@@ -79,8 +81,8 @@ export function AppSidebar() {
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {menu.map((item) => {
             const active =
-              item.href === "/"
-                ? pathname === "/"
+              item.href === "/" || item.href === "/dashboard"
+                ? pathname === "/" || pathname === "/dashboard"
                 : item.href === "/bosses"
                   ? pathname === "/bosses" ||
                     pathname.startsWith("/servers") ||

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
+import { useIsAdmin } from "@/context/role-context";
 import { useToast } from "@/context/toast-context";
 import { teamsService } from "@/services/teams.service";
 import {
@@ -35,8 +36,15 @@ function initials(name: string): string {
   return trimmed.slice(0, 2);
 }
 
-function EmptySlot({ onClick }: { onClick: () => void }) {
+function EmptySlot({ onClick, editable }: { onClick: () => void; editable: boolean }) {
   const [over, setOver] = useState(false);
+  if (!editable) {
+    return (
+      <div className="flex h-12 w-full items-center justify-center rounded-xl border border-dashed border-[var(--line)] text-xs text-[var(--ink-muted)]">
+        ว่าง
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -77,45 +85,65 @@ function PlayerChip({
   player,
   crowned = false,
   trailing,
+  editable,
   onSwap,
 }: {
   player: BoardPlayer;
   crowned?: boolean;
   trailing?: ReactNode;
+  editable: boolean;
   onSwap: (sourceId: string, targetId: string) => void;
 }) {
   const [over, setOver] = useState(false);
   return (
     <div
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData("text/plain", player.assignmentId);
-        event.dataTransfer.effectAllowed = "move";
-      }}
-      onDragOver={(event) => {
-        if (isTeamDrag(event)) return;
-        if (![...event.dataTransfer.types].includes("text/plain")) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
-        setOver(true);
-      }}
-      onDragLeave={(event) => {
-        const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        setOver(false);
-      }}
-      onDrop={(event) => {
-        if (isTeamDrag(event)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setOver(false);
-        const sourceId = event.dataTransfer.getData("text/plain");
-        if (!sourceId || sourceId === player.assignmentId) return;
-        onSwap(sourceId, player.assignmentId);
-      }}
-      className={`flex min-w-0 cursor-grab items-center gap-2 rounded-xl border px-2 py-1.5 active:cursor-grabbing ${
-        over
+      draggable={editable}
+      onDragStart={
+        editable
+          ? (event) => {
+              event.dataTransfer.setData("text/plain", player.assignmentId);
+              event.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
+      onDragOver={
+        editable
+          ? (event) => {
+              if (isTeamDrag(event)) return;
+              if (![...event.dataTransfer.types].includes("text/plain")) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = "move";
+              setOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={
+        editable
+          ? (event) => {
+              const next = event.relatedTarget;
+              if (next instanceof Node && event.currentTarget.contains(next)) return;
+              setOver(false);
+            }
+          : undefined
+      }
+      onDrop={
+        editable
+          ? (event) => {
+              if (isTeamDrag(event)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setOver(false);
+              const sourceId = event.dataTransfer.getData("text/plain");
+              if (!sourceId || sourceId === player.assignmentId) return;
+              onSwap(sourceId, player.assignmentId);
+            }
+          : undefined
+      }
+      className={`flex min-w-0 items-center gap-2 rounded-xl border px-2 py-1.5 ${
+        editable ? "cursor-grab active:cursor-grabbing" : ""
+      } ${
+        over && editable
           ? "border-[var(--accent-strong)] bg-[var(--surface-hover)]"
           : "border-[var(--line)] bg-[var(--surface)]"
       }`}
@@ -138,13 +166,14 @@ function PlayerChip({
           {player.memberName}
         </span>
       </span>
-      {trailing}
+      {editable ? trailing : null}
     </div>
   );
 }
 
 export function TeamsPageClient() {
   const toast = useToast();
+  const canEdit = useIsAdmin();
   const [board, setBoard] = useState<TeamBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,6 +199,7 @@ export function TeamsPageClient() {
   const draggingRef = useRef(false);
 
   async function run(task: () => Promise<TeamBoard>, success?: string) {
+    if (!canEdit) return false;
     pendingRef.current = true;
     setPending(true);
     try {
@@ -250,7 +280,7 @@ export function TeamsPageClient() {
     event.preventDefault();
     event.stopPropagation();
     setDragOverTeamId(null);
-    if (!board || pending) return;
+    if (!canEdit || !board || pending) return;
     const sourceId = event.dataTransfer.getData(TEAM_DRAG_TYPE);
     if (!sourceId || sourceId === targetId) return;
     const ids = board.teams.map((team) => team.id);
@@ -263,6 +293,7 @@ export function TeamsPageClient() {
   }
 
   function onDrop(event: DragEvent, slotType: TeamSlotType, teamId?: string) {
+    if (!canEdit) return;
     if (isTeamDrag(event)) {
       if (teamId) reorderOnto(event, teamId);
       return;
@@ -279,7 +310,7 @@ export function TeamsPageClient() {
   }
 
   function swapPlayers(sourceId: string, targetId: string) {
-    if (pending) return;
+    if (!canEdit || pending) return;
     void run(() => teamsService.swap(sourceId, targetId), "สลับผู้เล่นแล้ว");
   }
 
@@ -317,7 +348,7 @@ export function TeamsPageClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {board?.session.status === "draft" ? (
+          {canEdit && board?.session.status === "draft" ? (
             <Button
               type="button"
               disabled={pending}
@@ -326,7 +357,7 @@ export function TeamsPageClient() {
               เริ่มรอบนี้
             </Button>
           ) : null}
-          {board?.session.status === "active" ? (
+          {canEdit && board?.session.status === "active" ? (
             <Button
               type="button"
               variant="secondary"
@@ -362,7 +393,9 @@ export function TeamsPageClient() {
                   ผู้เล่นรอเล่น ({board.waiting.length} คน)
                 </h2>
                 <p className="text-xs text-[var(--ink-muted)]">
-                  ลากไปวางที่ช่องว่าง หรือวางทับผู้เล่นเพื่อสลับทีม
+                  {canEdit
+                    ? "ลากไปวางที่ช่องว่าง หรือวางทับผู้เล่นเพื่อสลับทีม"
+                    : "ดูการจัดทีมอย่างเดียว"}
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -372,39 +405,50 @@ export function TeamsPageClient() {
                   placeholder="ค้นหาผู้เล่น..."
                   className="h-10 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 text-sm outline-none"
                 />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={pending}
-                  onClick={() => {
-                    setTeamName("");
-                    setAddMainLimit(String(MAIN_SLOT_LIMIT));
-                    setAddReserveLimit(String(RESERVE_SLOT_LIMIT));
-                    setAddOpen(true);
-                  }}
-                >
-                  เพิ่มทีม
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={
-                    pending ||
-                    board.teams.every((team) => team.main.length === 0 && team.reserve.length === 0)
-                  }
-                  onClick={() =>
-                    void run(() => teamsService.clearTeams(), "ย้ายผู้เล่นทุกทีมกลับไปรอเล่นแล้ว")
-                  }
-                >
-                  เคลียร์
-                </Button>
-                <Button
-                  type="button"
-                  disabled={pending || board.waiting.length === 0}
-                  onClick={() => void run(() => teamsService.fill(), "จัดผู้เล่นรอเล่นเข้าทีมแล้ว")}
-                >
-                  + เพิ่มทั้งหมด
-                </Button>
+                {canEdit ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={pending}
+                      onClick={() => {
+                        setTeamName("");
+                        setAddMainLimit(String(MAIN_SLOT_LIMIT));
+                        setAddReserveLimit(String(RESERVE_SLOT_LIMIT));
+                        setAddOpen(true);
+                      }}
+                    >
+                      เพิ่มทีม
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={
+                        pending ||
+                        board.teams.every(
+                          (team) => team.main.length === 0 && team.reserve.length === 0,
+                        )
+                      }
+                      onClick={() =>
+                        void run(
+                          () => teamsService.clearTeams(),
+                          "ย้ายผู้เล่นทุกทีมกลับไปรอเล่นแล้ว",
+                        )
+                      }
+                    >
+                      เคลียร์
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={pending || board.waiting.length === 0}
+                      onClick={() =>
+                        void run(() => teamsService.fill(), "จัดผู้เล่นรอเล่นเข้าทีมแล้ว")
+                      }
+                    >
+                      + เพิ่มทั้งหมด
+                    </Button>
+                  </>
+                ) : null}
               </div>
             </div>
             <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -415,6 +459,7 @@ export function TeamsPageClient() {
                   <div key={player.assignmentId} className="w-56 shrink-0">
                     <PlayerChip
                       player={player}
+                      editable={canEdit}
                       onSwap={swapPlayers}
                       trailing={
                         <details className="relative">
@@ -501,45 +546,51 @@ export function TeamsPageClient() {
               >
                 <header className="mb-3 flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1">
-                    <button
-                      type="button"
-                      draggable={!pending}
-                      aria-label={`ย้ายตำแหน่ง ${team.name}`}
-                      title="ลากเพื่อย้ายกล่องทีม"
-                      className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragEnd={() => setDragOverTeamId(null)}
-                    >
-                      ⠿
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        draggable={!pending}
+                        aria-label={`ย้ายตำแหน่ง ${team.name}`}
+                        title="ลากเพื่อย้ายกล่องทีม"
+                        className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => setDragOverTeamId(null)}
+                      >
+                        ⠿
+                      </button>
+                    ) : null}
                     <h2 className="min-w-0 truncate text-sm font-semibold">{team.name}</h2>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs text-[var(--accent-strong)]">
-                    <button
-                      type="button"
-                      className="rounded-md px-2 py-1 text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
-                      aria-label={`แก้ไข ${team.name}`}
-                      onClick={() => {
-                        setEditTeam({ id: team.id, name: team.name });
-                        setEditName(team.name);
-                        setEditMainLimit(String(team.mainLimit));
-                        setEditReserveLimit(String(team.reserveLimit));
-                      }}
-                    >
-                      แก้ไข
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="rounded-md px-2 py-1 text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
+                        aria-label={`แก้ไข ${team.name}`}
+                        onClick={() => {
+                          setEditTeam({ id: team.id, name: team.name });
+                          setEditName(team.name);
+                          setEditMainLimit(String(team.mainLimit));
+                          setEditReserveLimit(String(team.reserveLimit));
+                        }}
+                      >
+                        แก้ไข
+                      </button>
+                    ) : null}
                     {team.main.length} / {team.mainLimit}
-                    <button
-                      type="button"
-                      className="grid size-8 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--surface-hover)]"
-                      aria-label={`ซ่อน ${team.name}`}
-                      onClick={() => setRemoveId(team.id)}
-                    >
-                      ✕
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                        aria-label={`ซ่อน ${team.name}`}
+                        onClick={() => setRemoveId(team.id)}
+                      >
+                        ✕
+                      </button>
+                    ) : null}
                   </span>
                 </header>
                 <div
@@ -552,6 +603,7 @@ export function TeamsPageClient() {
                       key={player.assignmentId}
                       player={player}
                       crowned={index === 0}
+                      editable={canEdit}
                       onSwap={swapPlayers}
                       trailing={
                         <button
@@ -575,6 +627,7 @@ export function TeamsPageClient() {
                   {Array.from({ length: Math.max(0, team.mainLimit - team.main.length) }, (_, index) => (
                     <EmptySlot
                       key={`main-empty-${index}`}
+                      editable={canEdit}
                       onClick={() =>
                         setPicker({ teamId: team.id, teamName: team.name, slotType: "main" })
                       }
@@ -605,20 +658,22 @@ export function TeamsPageClient() {
               >
                 <header className="mb-3 flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1">
-                    <button
-                      type="button"
-                      draggable={!pending}
-                      aria-label={`ย้ายตำแหน่งสำรอง ${team.name}`}
-                      title="ลากเพื่อย้ายกล่องทีม"
-                      className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragEnd={() => setDragOverTeamId(null)}
-                    >
-                      ⠿
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        draggable={!pending}
+                        aria-label={`ย้ายตำแหน่งสำรอง ${team.name}`}
+                        title="ลากเพื่อย้ายกล่องทีม"
+                        className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => setDragOverTeamId(null)}
+                      >
+                        ⠿
+                      </button>
+                    ) : null}
                     <h2 className="min-w-0 truncate text-sm font-semibold">สำรอง{team.name}</h2>
                   </span>
                   <span className="text-xs text-[var(--accent-strong)]">
@@ -634,6 +689,7 @@ export function TeamsPageClient() {
                     <PlayerChip
                       key={player.assignmentId}
                       player={player}
+                      editable={canEdit}
                       onSwap={swapPlayers}
                       trailing={
                         <button
@@ -659,6 +715,7 @@ export function TeamsPageClient() {
                     (_, index) => (
                       <EmptySlot
                         key={`reserve-empty-${index}`}
+                        editable={canEdit}
                         onClick={() =>
                           setPicker({
                             teamId: team.id,
@@ -685,23 +742,28 @@ export function TeamsPageClient() {
                   ผู้เล่นที่ไม่เล่นแล้ว ({board.inactive.length} คน)
                 </h2>
                 <p className="text-xs text-[var(--ink-muted)]">
-                  ลากมาวางที่นี่เพื่อพักจากรอบนี้
+                  {canEdit ? "ลากมาวางที่นี่เพื่อพักจากรอบนี้" : "ผู้เล่นที่พักจากรอบนี้"}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="danger"
-                disabled={pending || board.inactive.length === 0}
-                onClick={() => void run(() => teamsService.clearInactive(), "ย้ายกลับไปรอเล่นแล้ว")}
-              >
-                ลบทั้งหมด
-              </Button>
+              {canEdit ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={pending || board.inactive.length === 0}
+                  onClick={() =>
+                    void run(() => teamsService.clearInactive(), "ย้ายกลับไปรอเล่นแล้ว")
+                  }
+                >
+                  ลบทั้งหมด
+                </Button>
+              ) : null}
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {board.inactive.map((player) => (
                 <div key={player.assignmentId} className="w-56">
                   <PlayerChip
                     player={player}
+                    editable={canEdit}
                     onSwap={swapPlayers}
                     trailing={
                       <button
@@ -729,7 +791,7 @@ export function TeamsPageClient() {
       )}
 
       <Modal
-        open={picker !== null}
+        open={canEdit && picker !== null}
         title={picker ? `เพิ่มเข้า${picker.slotType === "main" ? "หลัก" : "สำรอง"} ${picker.teamName}` : ""}
         description="เลือกจากผู้เล่นที่รอเล่น"
         onClose={() => {
@@ -781,7 +843,7 @@ export function TeamsPageClient() {
       </Modal>
 
       <Modal
-        open={addOpen}
+        open={canEdit && addOpen}
         title="เพิ่มทีม"
         closeDisabled={pending}
         onClose={() => {
@@ -869,7 +931,7 @@ export function TeamsPageClient() {
       </Modal>
 
       <Modal
-        open={editTeam !== null}
+        open={canEdit && editTeam !== null}
         title="แก้ไขทีม"
         description={editTeam ? `ชื่อปัจจุบัน: ${editTeam.name}` : undefined}
         closeDisabled={pending}
@@ -954,7 +1016,7 @@ export function TeamsPageClient() {
       </Modal>
 
       <ConfirmModal
-        open={removeTarget !== null}
+        open={canEdit && removeTarget !== null}
         title="ซ่อนทีมนี้"
         description={
           removeTarget

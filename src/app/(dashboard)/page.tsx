@@ -1,5 +1,5 @@
-import { DashboardPageClient } from "@/components/dashboard/dashboard-page-client";
+import { redirect } from "next/navigation";
 
-export default function DashboardPage() {
-  return <DashboardPageClient />;
+export default function HomePage() {
+  redirect("/teams");
 }

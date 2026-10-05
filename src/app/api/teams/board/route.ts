@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { actorLabel, requireAuth } from "@/lib/api-auth";
+import { actorLabel, requireAuth, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import {
@@ -9,6 +9,7 @@ import {
   completeSession,
   fillTeams,
   loadTeamBoard,
+  loadTeamBoardView,
   moveAssignment,
   removeTeam,
   reorderTeams,
@@ -20,13 +21,16 @@ import { TeamSlotType } from "@/generated/prisma/enums";
 
 export async function GET() {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
     const board = await remember(
-      "teams:board",
+      auth.access.isAdmin ? "teams:board" : "teams:board:view",
       ["teams"],
       CACHE_TTL.board,
-      () => loadTeamBoard(actorLabel(auth.user)),
+      () =>
+        auth.access.isAdmin
+          ? loadTeamBoard(actorLabel(auth.user))
+          : loadTeamBoardView(),
     );
     return NextResponse.json(board);
   } catch (error) {
