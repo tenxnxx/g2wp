@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { Spinner } from "@/components/ui/spinner";
+import { useLiveTopic } from "@/components/live/use-live-topic";
 import { useToast } from "@/context/toast-context";
 import { itemsService } from "@/services/items.service";
 import { DEFAULT_PAGE_SIZE } from "@/types/pagination";
@@ -20,6 +21,7 @@ type ItemTableProps = {
 export function ItemTable({ onEdit }: ItemTableProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  useLiveTopic("items");
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");

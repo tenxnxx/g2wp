@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { isLiveTopic } from "@/lib/live";
 import { getRedis } from "@/lib/redis";
 
 const PREFIX = "g2:c:v1:";
@@ -153,8 +155,23 @@ export async function remember<T>(
   }
 }
 
+function publishLiveTags(tags: readonly string[]) {
+  const topics = tags.filter(isLiveTopic);
+  if (topics.length === 0) return;
+  const run = async () => {
+    const { publishLiveTopics } = await import("@/server/live-publish");
+    await publishLiveTopics(topics);
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
 export async function invalidateTags(tags: readonly string[]): Promise<void> {
   if (tags.length === 0) return;
+  publishLiveTags(tags);
   const redis = await getRedis();
   if (!redis) return;
 

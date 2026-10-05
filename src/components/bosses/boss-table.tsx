@@ -22,6 +22,7 @@ import {
   formatBossTime,
 } from "@/lib/bosses";
 import { subscribeBossClock } from "@/components/bosses/use-boss-clock";
+import { useLiveTopic } from "@/components/live/use-live-topic";
 import { bossesService } from "@/services/bosses.service";
 import { citiesService } from "@/services/cities.service";
 import { serversService } from "@/services/servers.service";
@@ -78,6 +79,7 @@ function BossElapsed({
 export function BossTable({ onEdit }: BossTableProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  useLiveTopic("bosses");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [cityId, setCityId] = useState("");
