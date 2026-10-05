@@ -1,10 +1,13 @@
 /**
- * Rate limiter: Upstash Redis REST when configured, else in-memory (per instance).
+ * Rate limiter: REDIS_URL when configured, else Upstash Redis REST, else in-memory.
  *
  * Env (optional):
+ *   REDIS_URL
  *   UPSTASH_REDIS_REST_URL
  *   UPSTASH_REDIS_REST_TOKEN
  */
+
+import { getRedis } from "@/lib/redis";
 
 type Bucket = { count: number; resetAt: number };
 
@@ -43,6 +46,57 @@ function memoryRateLimit(
     remaining: limit - existing.count,
     resetAt: existing.resetAt,
   };
+}
+
+const RATE_WINDOW = `
+local count = redis.call('INCR', KEYS[1])
+local ttl = redis.call('TTL', KEYS[1])
+if ttl < 0 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+  ttl = tonumber(ARGV[1])
+end
+return {count, ttl}
+`;
+
+async function redisRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitResult | null> {
+  const redis = await getRedis();
+  if (!redis) return null;
+
+  const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
+  const redisKey = `g2:rl:${key}`;
+
+  try {
+    const raw = await redis.eval(RATE_WINDOW, {
+      keys: [redisKey],
+      arguments: [String(windowSec)],
+    });
+    const pair = Array.isArray(raw) ? raw : [];
+    const count = Number(pair[0] ?? 0);
+    const ttl = Number(pair[1] ?? windowSec);
+    const retryAfterSec = ttl > 0 ? ttl : windowSec;
+    const resetAt = Date.now() + retryAfterSec * 1000;
+
+    if (count > limit) {
+      return {
+        ok: false,
+        remaining: 0,
+        resetAt,
+        retryAfterSec: Math.max(1, retryAfterSec),
+      };
+    }
+
+    return {
+      ok: true,
+      remaining: Math.max(0, limit - count),
+      resetAt,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function upstashRateLimit(
@@ -99,12 +153,14 @@ async function upstashRateLimit(
   }
 }
 
-/** Prefer Upstash when configured; fall back to in-memory. */
+/** Prefer REDIS_URL, then Upstash, then in-memory. */
 export async function rateLimit(
   key: string,
   limit: number,
   windowMs: number,
 ): Promise<RateLimitResult> {
+  const direct = await redisRateLimit(key, limit, windowMs);
+  if (direct) return direct;
   const remote = await upstashRateLimit(key, limit, windowMs);
   if (remote) return remote;
   return memoryRateLimit(key, limit, windowMs);

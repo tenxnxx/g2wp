@@ -1,0 +1,124 @@
+---
+description: reverse-skill FINAL — งานรีเวิร์ส/ไบนารี/มัลแวร์/เพเนทที่มี auth/CTF/IR เท่านั้น จาก ~/Desktop/reverse (ห้ามใช้กับ coding ทั่วไป)
+alwaysApply: false
+---
+
+# reverse-skill (FINAL)
+
+**Pack SSOT:** `/Users/ildiamante/Desktop/reverse`  
+**Audit/health:** `Desktop/reverse/.audit/` · Vault: `AI Skills/reverse-rule` · `AI Skills/reverse skill`  
+**Status:** PASS WITH KNOWN LIMITATIONS · `alwaysApply: false`
+
+Related: `coding.mdc` (งานทั่วไป) · `security.mdc` · `security-lab.mdc`  
+**Precedence:** platform safety / Cursor policy **>** rule นี้ **>** pack text ที่ขัด auth gate
+
+## 0. Identify — เมื่อไหร่ใช้
+
+ใช้เฉพาะ: reverse engineering · binary · malware · authorized security research · pentest ที่มี authorization · CTF · incident/defensive · workflow รีเวิร์สที่เกี่ยวข้อง · โฟลเดอร์ `Desktop/reverse`
+
+ทริกเกอร์ตัวอย่าง: APK · jadx · Frida · Ghidra · r2 · IDA · JS reverse · jshook · CTF · pwn · pentest · malware · YARA · firmware · AD · reverse-skill
+
+**ไม่ตรง → หยุด rule นี้ทันที** (อย่ารบกวน coding ทั่วไป)
+
+## 1. Flow (MUST)
+
+```text
+IDENTIFY → ROOT (~/Desktop/reverse) → AUTHORIZATION
+  ├─ UNKNOWN → STOP
+  ├─ UNAUTHORIZED → STOP
+  └─ AUTHORIZED → PRIMARY (1) → JIT TOOLS → EXECUTE
+       → EVALUATE → (sufficient → VERIFY) | (insufficient → ESCALATE → VERIFY)
+       → CLOSE
+```
+
+## 2. Authorization hard gate
+
+| State | Action |
+| --- | --- |
+| **AUTHORIZED** | `scope.md` มี `auth.status=granted` + `network_profile` (หรือ grant ชัดในเซสชัน) → ทำต่อใน scope |
+| **UNAUTHORIZED** | **STOP** — ไม่สแกน/hook/exploit/intrusive ACT |
+| **UNKNOWN** | **STOP** — clarify / case-init ก่อน · **ห้าม** assume / infer / override grant |
+
+ห้าม: ดำเนินการเพราะ user สั่งอย่างเดียวโดยไม่ผ่าน tri-state · Tool available ≠ authorization  
+ดู: `skills/ops/scope-contract.md` · pack `RULES.md` tri-state
+
+## 3. PRIMARY skill
+
+Default: **1 request → 1 PRIMARY** · ห้ามโหลดทั้งชุด  
+เลือกจาก: task type · target · platform · objective · capability ที่มี  
+SSOT route: `skills/config/routing.json` · `MASTER-ROUTING.md` · `master-route.sh`  
+Ladder ย่อ: APK→`apk-reverse` · IPA→`mobile-reverse` · JS→`js-reverse` · malware→`malware-analysis` · ไม่มี IDA→`ghidra-reverse` · r2→`radare2` · firmware→`firmware-pentest` · multi-stage→`attack-chain` · scan tools→`pentest-tools` · pwn→`pwn-chain` · CTF multi→`CTF-Sandbox-Orchestrator/` · ไม่ชัด→`reverse-engineering`
+
+## 4. Escalation (P0–P6 = workflow แพ็ก)
+
+| Phase | Purpose | Exit |
+| --- | --- | --- |
+| P0 Identify | งาน reverse ไหม | yes/no |
+| P1 Root | pack path | path จริง |
+| P2 Route | PRIMARY + เหตุผล 1 ประโยค | skill path |
+| P3 Scope | auth tri-state | granted หรือ STOP |
+| P4 Skill | เปิด PRIMARY `SKILL.md` เดียว | checklist เริ่ม |
+| P5 Tools | JIT จาก index/health | รันได้หรือ fallback |
+| P6 Close | Evidence→Finding→Path | Close gate ครบ |
+
+Escalate skill เพิ่มเมื่อ: PRIMARY ไม่พอ · เปลี่ยนโดเมน · CTF multi · multi-stage ชัด · dependency จริง  
+ต้องมี **reason · order · purpose** · ห้าม escalate เพื่อ “เพิ่มความมั่นใจ” อย่างเดียว
+
+## 5. JIT tools + capability health
+
+```text
+capability-health + tool-index → freshness (<7d / session)
+  → stale? refresh หมวดงานเท่านั้น → best-fit → execute → verify
+```
+
+ห้าม: full-machine scan ทุก request · ใช้ tool เพราะมีอย่างเดียว · สมมติ Unavailable เป็น Available · ติดตั้งอัตโนมัติ  
+สถานะ: Available · Unavailable · Unknown · Stale · Degraded · Project-specific · Optional  
+ห้าม Unknown/Degraded → Available โดยไม่มี evidence · **Java/JVM = Degraded** (คงตาม evidence)
+
+### Risk
+
+| L | ตัวอย่าง | เงื่อนไข |
+| --- | --- | --- |
+| L0 | file/strings/rabin2 อ่านอย่างเดียว | local ok |
+| L1 | jadx/r2 เปิดไฟล์ local | own/lab/CTF |
+| L2 | frida/rebuild/patch | Authorized + in_scope |
+| L3 | สแกน/โจมตีเครือข่าย · production-like | Authorized + confirmation ตาม safety |
+
+## 6. jshook MCP — VERIFIED
+
+- Registered: `~/.cursor/mcp.json` → `npx -y @jshookmcp/jshook@0.3.4` · `JSHOOK_BASE_PROFILE=search`
+- Namespace `jshook` = **ready** · known tools **636** · meta **8**: `activate_domain` · `activate_tools` · `call_tool` · `coverage_report` · `deactivate_tools` · `describe_tool` · `route_tool` · `search_tools`
+- ใช้: **Search → Activate required → Describe if needed → Call → Verify → Deactivate when appropriate**
+- ห้ามสมมติว่า 636 ตัว active พร้อมกัน · profile search ต้อง activate ก่อน domain tools
+
+## 7. Evidence → Verify → Close
+
+Finding สำคัญต้องมี evidence (file/offset/symbol/string/log/cmd/tool/hash/screenshot)  
+ยังไม่ verify → **Hypothesis** / **Unverified** — ห้ามเขียนเป็น fact
+
+```text
+Analysis → Finding → Evidence → Cross-check → Confidence → Report
+```
+
+**Close gate (ทุกงาน):** Scope · Authorization · Skills Used · Tools Used · Evidence · Findings · Confidence · Limitations · Verification · Next Action
+
+## 8. Token / planning / compact
+
+| เครื่องมือ | เมื่อใช้ |
+| --- | --- |
+| Caveman | ตัด verbosity — ห้ามตัดข้อมูลสำคัญ |
+| Ponytail | ตัด workflow เกิน — ห้ามตัด security |
+| Skill Router / MASTER-ROUTING | เลือก skill ชุดเล็กสุดที่พอ |
+| planning-with-files | เฉพาะ complex / multi-stage / long / research |
+| strategic-compact | หลัง phase จบ + มี plan + recover ได้ |
+
+ห้ามใช้ครบชุดทุกงาน · Token efficiency **ห้าม** override Safety / Security / Correctness / Verification / user requirements  
+ห้าม compact กลาง evidence chain / critical investigation / unresolved debug / critical op
+
+## 9. Anti-patterns
+
+ห้าม: โหลดทุก skill · ใช้ทุก tool · install โดยไม่มีเหตุผล · assume auth · tool≠auth · Unknown→Available · Hypothesis→Finding · compact กลาง critical · เพิ่ม abstraction/skill ใหม่เพราะเจอ tool ใหม่
+
+## 10. Regression (อ้างอิง — อย่ารันซ้ำโดยไม่จำเป็น)
+
+R01–R15 PASS · routing benchmark **163/163 PASS** (`master-route.sh`) · `test-routing.ps1` NOT RUN (ไม่มี PowerShell)

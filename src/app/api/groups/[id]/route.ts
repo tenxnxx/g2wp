@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { serializeGroup } from "@/lib/groups";
 
@@ -12,14 +13,22 @@ export async function GET(_request: Request, { params }: Params) {
     if (auth.error) return auth.error;
 
     const { id } = await params;
-    const group = await prisma.group.findUnique({
-      where: { id },
-      include: { _count: { select: { members: true } } },
-    });
-    if (!group) {
+    const body = await remember(
+      `/api/groups/${id}`,
+      ["groups"],
+      CACHE_TTL.detail,
+      async () => {
+        const group = await prisma.group.findUnique({
+          where: { id },
+          include: { _count: { select: { members: true } } },
+        });
+        return group ? serializeGroup(group) : null;
+      },
+    );
+    if (!body) {
       return NextResponse.json({ error: "ไม่พบกลุ่ม" }, { status: 404 });
     }
-    return NextResponse.json(serializeGroup(group));
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/groups/[id]", error);
     return NextResponse.json(
@@ -65,6 +74,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: { _count: { select: { members: true } } },
     });
 
+    await invalidateResource("groups");
     return NextResponse.json(serializeGroup(group));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update group");
@@ -78,6 +88,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.group.delete({ where: { id } });
+    await invalidateResource("groups");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete group");

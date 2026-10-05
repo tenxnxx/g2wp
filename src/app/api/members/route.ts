@@ -5,6 +5,7 @@ import {
   prismaErrorResponse,
   readJsonBody,
 } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { parseGroupIdInput, serializeMember } from "@/lib/members";
 import {
@@ -46,23 +47,29 @@ export async function GET(request: Request) {
       ? { name: { contains: search, mode: "insensitive" as const } }
       : undefined;
 
-    const [total, members] = await Promise.all([
-      prisma.member.count({ where }),
-      prisma.member.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-        include: { group: { select: groupSelect } },
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/members", searchParams),
+      ["members"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, members] = await Promise.all([
+          prisma.member.count({ where }),
+          prisma.member.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+            include: { group: { select: groupSelect } },
+          }),
+        ]);
+        return {
+          data: members.map(serializeMember),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    const meta = buildPaginationMeta(total, page, limit);
-
-    return NextResponse.json({
-      data: members.map(serializeMember),
-      meta,
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/members", error);
     return NextResponse.json(
@@ -133,6 +140,7 @@ export async function POST(request: Request) {
       include: { group: { select: groupSelect } },
     });
 
+    await invalidateResource("members");
     return NextResponse.json(serializeMember(member), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create member");

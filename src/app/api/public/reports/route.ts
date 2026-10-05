@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { invalidateResource } from "@/lib/cache";
 import { normalizeHttpUrl, readJsonBody } from "@/lib/api-errors";
 import {
   REPORT_EVIDENCE_URL_MAX,
@@ -101,6 +102,7 @@ export async function POST(request: Request) {
       orderBy: { createdAt: "desc" },
     });
     if (recent) {
+      await invalidateResource("reports");
       return NextResponse.json(serializeBehaviorReport(recent), {
         status: 200,
       });
@@ -117,6 +119,7 @@ export async function POST(request: Request) {
       },
     });
 
+    await invalidateResource("reports");
     return NextResponse.json(serializeBehaviorReport(report), { status: 201 });
   } catch (error) {
     console.error("POST /api/public/reports", error);

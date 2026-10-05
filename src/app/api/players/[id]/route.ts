@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
@@ -34,16 +35,19 @@ export async function GET(_request: Request, { params }: Params) {
     if (auth.error) return auth.error;
 
     const { id } = await params;
-    const player = await prisma.player.findUnique({
-      where: { id },
-      include: { member: { select: { id: true, name: true } } },
+    const body = await remember(`players:${id}`, ["players"], CACHE_TTL.detail, async () => {
+      const player = await prisma.player.findUnique({
+        where: { id },
+        include: { member: { select: { id: true, name: true } } },
+      });
+      return player ? serializePlayer(player) : null;
     });
 
-    if (!player) {
+    if (!body) {
       return NextResponse.json({ error: "Player not found" }, { status: 404 });
     }
 
-    return NextResponse.json(serializePlayer(player));
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/players/[id]", error);
     return NextResponse.json(
@@ -102,6 +106,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: { member: { select: { id: true, name: true } } },
     });
 
+    await invalidateResource("players");
     return NextResponse.json(serializePlayer(player));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update player");
@@ -115,6 +120,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.player.delete({ where: { id } });
+    await invalidateResource("players");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete player");

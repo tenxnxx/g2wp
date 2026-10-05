@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
+import { useIsAdmin } from "@/context/role-context";
 import { useToast } from "@/context/toast-context";
 import { displayHandle } from "@/lib/display";
 import { EMPTY_ARRAY } from "@/lib/empty";
@@ -36,6 +37,7 @@ function StatCard({
 }
 
 function MemberDetailPanel({ member }: { member: MemberDetail }) {
+  const isAdmin = useIsAdmin();
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 md:p-6">
@@ -103,12 +105,14 @@ function MemberDetailPanel({ member }: { member: MemberDetail }) {
               {member.playerCount} ตัวละคร
             </p>
           </div>
-          <Link
-            href="/players"
-            className="text-sm font-medium text-[var(--accent-strong)] hover:underline"
-          >
-            จัดการตัวละคร
-          </Link>
+          {isAdmin ? (
+            <Link
+              href="/players"
+              className="text-sm font-medium text-[var(--accent-strong)] hover:underline"
+            >
+              จัดการตัวละคร
+            </Link>
+          ) : null}
         </div>
 
         {member.players.length === 0 ? (
@@ -159,12 +163,14 @@ function MemberDetailPanel({ member }: { member: MemberDetail }) {
               {member.behaviorCount} ครั้ง
             </p>
           </div>
-          <Link
-            href="/behaviors"
-            className="text-sm font-medium text-[var(--accent-strong)] hover:underline"
-          >
-            จัดการพฤติกรรม
-          </Link>
+          {isAdmin ? (
+            <Link
+              href="/behaviors"
+              className="text-sm font-medium text-[var(--accent-strong)] hover:underline"
+            >
+              จัดการพฤติกรรม
+            </Link>
+          ) : null}
         </div>
 
         {member.behaviors.length === 0 ? (
@@ -218,6 +224,7 @@ function MemberDetailPanel({ member }: { member: MemberDetail }) {
 
 export function DashboardPageClient() {
   const toast = useToast();
+  const isAdmin = useIsAdmin();
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: dashboardService.getOverview,
@@ -325,7 +332,11 @@ export function DashboardPageClient() {
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
           <EmptyState
             title="ไม่มีข้อมูล"
-            description="ยังไม่มีสมาชิก — ไปเพิ่มที่หน้าสมาชิกก่อน"
+            description={
+              isAdmin
+                ? "ยังไม่มีสมาชิก — ไปเพิ่มที่หน้าสมาชิกก่อน"
+                : "ยังไม่มีสมาชิก"
+            }
           />
         </div>
       ) : (

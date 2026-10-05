@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
+import { invalidateResource } from "@/lib/cache";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import {
   checkEventInclude,
@@ -112,6 +113,7 @@ export async function POST(request: Request, { params }: Params) {
       },
     );
 
+    await invalidateResource("check-events");
     return NextResponse.json({
       member: serializeCheckEventMember(updatedRow),
       event: serializeCheckEvent(updatedEvent),

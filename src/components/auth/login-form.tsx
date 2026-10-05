@@ -19,7 +19,11 @@ export function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    searchParams.get("error") === "disabled"
+      ? "บัญชีนี้ถูกปิดใช้งาน ติดต่อแอดมิน"
+      : null,
+  );
 
   const loginMutation = useMutation({
     mutationFn: authService.login,

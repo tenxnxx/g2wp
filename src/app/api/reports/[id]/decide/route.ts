@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { invalidateResource } from "@/lib/cache";
 import { serializeBehaviorReportDetail } from "@/lib/behavior-reports";
 import { prisma } from "@/lib/db";
 import { DECISION_NOTE_MAX } from "@/lib/field-limits";
@@ -120,6 +121,7 @@ export async function POST(request: Request, { params }: Params) {
       });
     });
 
+    await invalidateResource("reports");
     return NextResponse.json(serializeBehaviorReportDetail(result));
   } catch (error) {
     if (error instanceof NotFoundError) {

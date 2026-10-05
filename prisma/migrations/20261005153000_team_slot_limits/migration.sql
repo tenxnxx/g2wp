@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "teams" ADD COLUMN "main_limit" INTEGER NOT NULL DEFAULT 5;
+ALTER TABLE "teams" ADD COLUMN "reserve_limit" INTEGER NOT NULL DEFAULT 3;

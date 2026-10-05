@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: g2wp-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: g2wp
+      POSTGRES_PASSWORD: g2wp
+      POSTGRES_DB: g2wp
+    volumes:
+      - g2wp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U g2wp -d g2wp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  g2wp_pgdata:

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { invalidateResource } from "@/lib/cache";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { prisma } from "@/lib/db";
 import { DESCRIPTION_MAX } from "@/lib/field-limits";
@@ -146,6 +147,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: safeInclude,
     });
 
+    await invalidateResource("safes");
     return NextResponse.json(serializeSafe(safe));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update safe");
@@ -159,6 +161,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.safe.delete({ where: { id } });
+    await invalidateResource("safes");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete safe");

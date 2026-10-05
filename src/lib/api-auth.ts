@@ -1,45 +1,26 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
+import { syncAppUser, type AppAccess } from "@/lib/app-users";
+import { authCookieKey, readAuthSnapshot, writeAuthSnapshot } from "@/lib/auth-snapshot";
+import { createClient } from "@/lib/supabase/server";
 
 export type AuthUser = User;
 
-function adminEmailAllowlist(): string[] {
-  const raw = process.env.ADMIN_EMAILS ?? "";
-  return raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function mustUseAllowlist(): boolean {
-  return (
-    process.env.NODE_ENV === "production" ||
-    process.env.REQUIRE_ADMIN_ALLOWLIST === "1"
-  );
-}
-
-function isAllowedAdmin(user: User): boolean {
-  const role = user.app_metadata?.role;
-  if (role === "admin") return true;
-
-  const allowlist = adminEmailAllowlist();
-  if (allowlist.length === 0) {
-    // Fail closed in production / when REQUIRE_ADMIN_ALLOWLIST=1
-    return !mustUseAllowlist();
-  }
-
-  const email = user.email?.toLowerCase();
-  return Boolean(email && allowlist.includes(email));
-}
-
-export async function requireAuth(): Promise<
-  { user: AuthUser; error?: undefined } | { user?: undefined; error: NextResponse }
+export async function requireUser(): Promise<
+  | { user: AuthUser; access: AppAccess; error?: undefined }
+  | { user?: undefined; access?: undefined; error: NextResponse }
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const cookieKey = authCookieKey((await cookies()).getAll());
+  let user = readAuthSnapshot(cookieKey);
+  if (!user) {
+    const supabase = await createClient();
+    const {
+      data: { user: fresh },
+    } = await supabase.auth.getUser();
+    user = fresh;
+    if (user) writeAuthSnapshot(cookieKey, user);
+  }
 
   if (!user) {
     return {
@@ -47,21 +28,46 @@ export async function requireAuth(): Promise<
     };
   }
 
-  if (!isAllowedAdmin(user)) {
-    const emptyAllowlist = adminEmailAllowlist().length === 0 && mustUseAllowlist();
+  const access = await syncAppUser(user);
+  if (!access) {
     return {
       error: NextResponse.json(
-        {
-          error: emptyAllowlist
-            ? "Forbidden — ตั้ง ADMIN_EMAILS ใน production"
-            : "Forbidden — ไม่มีสิทธิ์แอดมิน",
-        },
+        { error: "บัญชีนี้ไม่มีอีเมล" },
         { status: 403 },
       ),
     };
   }
 
-  return { user };
+  if (!access.isUse) {
+    return {
+      error: NextResponse.json(
+        { error: "บัญชีถูกปิดใช้งาน" },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { user, access };
+}
+
+/** Admin-only. Role comes from ADMIN_EMAILS or the users table. */
+export async function requireAuth(): Promise<
+  | { user: AuthUser; access: AppAccess; error?: undefined }
+  | { user?: undefined; access?: undefined; error: NextResponse }
+> {
+  const auth = await requireUser();
+  if (auth.error) return auth;
+
+  if (!auth.access.isAdmin) {
+    return {
+      error: NextResponse.json(
+        { error: "Forbidden — ไม่มีสิทธิ์แอดมิน" },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { user: auth.user, access: auth.access };
 }
 
 export function actorLabel(user: AuthUser): string {

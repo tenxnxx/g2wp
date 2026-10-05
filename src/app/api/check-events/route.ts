@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import {
   checkEventListInclude,
   countsFromGroupBy,
@@ -40,33 +41,40 @@ export async function GET(request: Request) {
       ...(setDateId ? { setDateId } : {}),
     };
 
-    const [total, events] = await Promise.all([
-      prisma.checkEvent.count({ where }),
-      prisma.checkEvent.findMany({
-        where,
-        include: checkEventListInclude,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/check-events", searchParams),
+      ["check-events"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, events] = await Promise.all([
+          prisma.checkEvent.count({ where }),
+          prisma.checkEvent.findMany({
+            where,
+            include: checkEventListInclude,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+          }),
+        ]);
+        const countRows =
+          events.length === 0
+            ? []
+            : await prisma.checkEventMember.groupBy({
+                by: ["checkEventId", "status"],
+                where: { checkEventId: { in: events.map((event) => event.id) } },
+                _count: { _all: true },
+              });
+        const countsMap = countsFromGroupBy(countRows);
+        return {
+          data: events.map((event) =>
+            serializeCheckEvent(event, countsMap.get(event.id) ?? emptyCounts()),
+          ),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    const countRows =
-      events.length === 0
-        ? []
-        : await prisma.checkEventMember.groupBy({
-            by: ["checkEventId", "status"],
-            where: { checkEventId: { in: events.map((event) => event.id) } },
-            _count: { _all: true },
-          });
-    const countsMap = countsFromGroupBy(countRows);
-
-    return NextResponse.json({
-      data: events.map((event) =>
-        serializeCheckEvent(event, countsMap.get(event.id) ?? emptyCounts()),
-      ),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/check-events", error);
     return NextResponse.json(
@@ -108,6 +116,7 @@ export async function POST(request: Request) {
       include: checkEventListInclude,
     });
 
+    await invalidateResource("check-events");
     return NextResponse.json(
       serializeCheckEvent(event, emptyCounts()),
       { status: 201 },

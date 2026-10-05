@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { useIsAdmin } from "@/context/role-context";
 import { useSidebar } from "@/context/sidebar-context";
 
 const MENU = [
   { href: "/", label: "แดชบอร์ด", hint: "Overview" },
+  { href: "/users", label: "ผู้ใช้", hint: "Users" },
   { href: "/members", label: "สมาชิก", hint: "Members" },
   { href: "/groups", label: "กลุ่ม", hint: "Groups" },
+  { href: "/bosses", label: "บอส", hint: "Bosses" },
   { href: "/items", label: "ไอเท็ม", hint: "Items" },
   { href: "/safes", label: "ตู้เซฟ", hint: "Safes" },
   { href: "/players", label: "ตัวละคร", hint: "Players" },
+  { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
   { href: "/behaviors", label: "พฤติกรรม", hint: "Behaviors" },
   { href: "/reports", label: "รายงานพฤติกรรม", hint: "Reports" },
   { href: "/set-dates", label: "กำหนดวันเช็ค", hint: "Dates" },
@@ -20,6 +24,8 @@ const MENU = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const isAdmin = useIsAdmin();
+  const menu = isAdmin ? MENU : MENU.filter((item) => item.href === "/");
   const {
     desktopExpanded,
     mobileOpen,
@@ -71,11 +77,16 @@ export function AppSidebar() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {MENU.map((item) => {
+          {menu.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : item.href === "/bosses"
+                  ? pathname === "/bosses" ||
+                    pathname.startsWith("/servers") ||
+                    pathname.startsWith("/type-servers") ||
+                    pathname.startsWith("/cities")
+                  : pathname.startsWith(item.href);
 
             return (
               <Link

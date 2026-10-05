@@ -6,7 +6,7 @@ import "./globals.css";
 const display = Kanit({
   variable: "--font-display",
   subsets: ["thai", "latin"],
-  weight: ["500", "600", "700"],
+  weight: ["600", "700"],
 });
 
 const body = Noto_Sans_Thai({

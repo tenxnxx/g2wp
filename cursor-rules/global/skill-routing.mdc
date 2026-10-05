@@ -1,0 +1,48 @@
+---
+description: เลือก skill/tool/workflow — smallest sufficient set, tool risk L0–L3
+alwaysApply: false
+---
+
+# Skill & Tool Routing
+
+Scope: **AI Skill Routing** — เมื่องานมีสาระ ต้องเลือก workflow หรือ skill
+
+Non-goals: ไม่แทน `multi-skill-router.mdc` ในโปรเจกต์ที่มี REGISTRY · ไม่ scan ทั้งเครื่องทุก request
+
+Priority: ในโปรเจกต์ supersix → `multi-skill-router.mdc` ชนะเรื่อง project skills
+
+## Flow
+
+```text
+Need → Discover (REGISTRY / available skills)
+→ Read เฉพาะ SKILL.md ที่เลือก
+→ Use tool (project-native → local → Cursor → MCP)
+→ Verify
+```
+
+## หลักการ
+
+1. **Smallest sufficient** — skill/tool น้อยสุดที่พอ
+2. Skill แนะนำ ≠ อนุญาต execute (โดยเฉพาะ L2–L3)
+3. ห้ามเดา tool name, schema, arguments — inspect ก่อน
+4. ห้ามโหลด skill ทั้งหมดเผื่อไว้
+5. External skills (`~/.codex/skills/`, `~/.agents/skills/`) — ใช้เมื่อ task ต้องการโดยตรง
+
+## Tool risk
+
+| L | ตัวอย่าง |
+|---|----------|
+| L0 | read, grep |
+| L1 | แก้ไฟล์ใน scope |
+| L2 | docker, bulk modify |
+| L3 | db migrate, prod, secrets, delete |
+
+## โปรเจกต์ที่มี `.cursor/skills/`
+
+อ่าน `REGISTRY.md` ก่อน → `CAPABILITIES.md` เมื่อต้องใช้ tool → JIT verify ถ้า stale
+
+รายละเอียดเต็ม: `multi-skill-router.mdc` · `docs/multi-skill.md`
+
+## Sub-agents
+
+ใช้เมื่องานใหญ่และแยกอิสระได้ — ห้ามใช้กับงานเล็กหรืองานต่อเนื่องที่ไฟล์ชนกัน

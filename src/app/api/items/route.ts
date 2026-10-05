@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { NAME_MAX } from "@/lib/field-limits";
 import { serializeItem } from "@/lib/items";
@@ -26,21 +27,29 @@ export async function GET(request: Request) {
       ? { name: { contains: search, mode: "insensitive" as const } }
       : {};
 
-    const [total, rows] = await Promise.all([
-      prisma.item.count({ where }),
-      prisma.item.findMany({
-        where,
-        orderBy: { name: "asc" },
-        skip,
-        take: limit,
-        include: { _count: { select: { safes: true } } },
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/items", searchParams),
+      ["items"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, rows] = await Promise.all([
+          prisma.item.count({ where }),
+          prisma.item.findMany({
+            where,
+            orderBy: { name: "asc" },
+            skip,
+            take: limit,
+            include: { _count: { select: { safes: true } } },
+          }),
+        ]);
+        return {
+          data: rows.map(serializeItem),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: rows.map(serializeItem),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/items", error);
     return NextResponse.json(
@@ -75,6 +84,7 @@ export async function POST(request: Request) {
       include: { _count: { select: { safes: true } } },
     });
 
+    await invalidateResource("items");
     return NextResponse.json(serializeItem(item), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create item");

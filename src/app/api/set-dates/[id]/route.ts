@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
@@ -39,11 +40,14 @@ export async function GET(_request: Request, { params }: Params) {
     if (auth.error) return auth.error;
 
     const { id } = await params;
-    const item = await prisma.setDate.findUnique({ where: { id } });
-    if (!item) {
+    const body = await remember(`set-dates:${id}`, ["set-dates"], CACHE_TTL.detail, async () => {
+      const item = await prisma.setDate.findUnique({ where: { id } });
+      return item ? serializeSetDate(item) : null;
+    });
+    if (!body) {
       return NextResponse.json({ error: "Set date not found" }, { status: 404 });
     }
-    return NextResponse.json(serializeSetDate(item));
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/set-dates/[id]", error);
     return NextResponse.json(
@@ -81,6 +85,7 @@ export async function PATCH(request: Request, { params }: Params) {
       data,
     });
 
+    await invalidateResource("set-dates");
     return NextResponse.json(serializeSetDate(item));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update set date");
@@ -107,6 +112,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     }
 
     await prisma.setDate.delete({ where: { id } });
+    await invalidateResource("set-dates");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete set date");

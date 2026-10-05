@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { cacheKey, CACHE_TTL, remember } from "@/lib/cache";
 import { serializeCheckEventMember } from "@/lib/check-events";
 import { prisma } from "@/lib/db";
 import {
@@ -59,26 +60,34 @@ export async function GET(request: Request, { params }: Params) {
         : {}),
     };
 
-    const [total, rows] = await Promise.all([
-      prisma.checkEventMember.count({ where }),
-      prisma.checkEventMember.findMany({
-        where,
-        include: {
-          member: {
-            select: { id: true, name: true, age: true, isLive: true },
-          },
-        },
-        orderBy: [{ status: "asc" }, { memberNameSnapshot: "asc" }],
-        skip,
-        take: limit,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey(`/api/check-events/${id}/members`, searchParams),
+      ["check-events"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, rows] = await Promise.all([
+          prisma.checkEventMember.count({ where }),
+          prisma.checkEventMember.findMany({
+            where,
+            include: {
+              member: {
+                select: { id: true, name: true, age: true, isLive: true },
+              },
+            },
+            orderBy: [{ status: "asc" }, { memberNameSnapshot: "asc" }],
+            skip,
+            take: limit,
+          }),
+        ]);
+        return {
+          data: rows.map(serializeCheckEventMember),
+          meta: buildPaginationMeta(total, page, limit),
+          eventStatus: event.status,
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: rows.map(serializeCheckEventMember),
-      meta: buildPaginationMeta(total, page, limit),
-      eventStatus: event.status,
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/check-events/[id]/members", error);
     return NextResponse.json(

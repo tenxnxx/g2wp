@@ -1,0 +1,160 @@
+---
+description: Multi-Skill Router v1.2 — project skills, CAPABILITIES, safe tool execution
+alwaysApply: true
+---
+
+# Multi-Skill Router (Composer) v1.2
+
+Scope: **AI Skill Routing (Project)** — โปรเจกต์ supersix-monorepo เท่านั้น
+
+Non-goals: ไม่แทน global `skill-routing.mdc` · ไม่โหลด external skill packs ทั้งหมด
+
+Priority: ชนะ `skill-routing.mdc` เรื่อง `.cursor/skills/` ของโปรเจกต์นี้
+
+ใช้ `.cursor/skills/` เท่านั้น — ห้าม external AI agent / runtime orchestrator
+
+## Flow
+
+```text
+Understand task → REGISTRY → select skills
+→ identify required capability → check CAPABILITIES.md (snapshot)
+→ refresh only if needed (JIT) → select suitable tool
+→ check tool risk L0–L3 → execute if authorized → verify
+→ on failure → recovery (below) → final report
+```
+
+**Platform limitation:** ทุก gate ด้านล่างเป็น **instruction-level guidance** — Cursor Composer ไม่มี runtime enforcement engine ใน repo นี้
+
+แสดงแผนสั้นเท่านั้น (ไม่เปิด chain-of-thought):
+
+```text
+Skills selected:
+- …
+
+Capabilities / tools:
+- … (risk L?)
+
+Execution:
+1. …
+```
+
+## Capability inventory = snapshot, not eternal truth
+
+`CAPABILITIES.md` = verified inventory **cache**  
+อย่าเชื่อแบบถาวร · JIT re-check เมื่อ freshness มีผล · ห้าม scan ทั้งเครื่องทุก request
+
+### เมื่อไหร่ต้อง refresh (เฉพาะตัวที่จำเป็น)
+
+1. Unknown  
+2. Unavailable แต่ task ต้องใช้  
+3. สำคัญต่องาน / ผิดแล้วพัง  
+4. อาจเปลี่ยนข้าม session  
+5. ผู้ใช้เพิ่งติดตั้ง/ลบ/อัปเดต  
+6. Destructive / high-impact (L2–L3)  
+7. Snapshot น่าจะ Stale  
+
+Inventory Available แต่ env ไม่มี → ถือ Stale/Unavailable  
+Inventory Unavailable แต่สงสัยว่าติดตั้งแล้ว → re-verify
+
+### Tool selection
+
+```text
+Project-native → verified local → Cursor → MCP → safe fallback → ask user
+```
+
+เลือกตาม suitability · Availability ≠ necessity · **Skill แนะนำ ≠ อนุญาต execute**
+
+### Tool risk
+
+| L | ชนิด | ตัวอย่าง gate |
+|---|------|----------------|
+| L0 | read-only | ตาม task |
+| L1 | local modify | ใน scope |
+| L2 | potentially destructive | ตรวจ scope ก่อน |
+| L3 | high impact (prod/delete/destructive DB/credentials) | confirmation หรือ rule อนุญาตชัด |
+
+รายละเอียดสถานะ/MCP health/drift: `.cursor/skills/CAPABILITIES.md`
+
+## Capability-aware tool selection
+
+Skill = HOW · Capability = WHAT available · Tool = WHICH mechanism · Safety = WHETHER · Verification = DONE?
+
+หลัก:
+
+1. Prefer existing project tools  
+2. Prefer deterministic tools เมื่อมี  
+3. ห้ามติดตั้ง tool ใหม่โดยไม่จำเป็น / ไม่ได้รับอนุญาต  
+4. Availability ≠ necessity — ห้ามใช้ tool เพียงเพราะมี  
+5. Verify ก่อนพึ่งพาเมื่อ freshness มีผล · Unknown ห้ามเดา  
+6. Capability-agnostic by default — ไม่ hard-code path เครื่อง  
+7. Fallback: preferred unavailable → alternative? → ทำต่อปลอดภัย? → ถาม — **ห้ามแกล้งว่ามี**
+
+## Request classification
+
+| Class | ความหมาย | การกระทำ |
+|-------|----------|----------|
+| **Clear** | ขอบเขตชัด 1–2 ชั้น | เลือก skill แล้วลงมือ |
+| **Ambiguous** | ขาดข้อหนึ่งที่เปลี่ยนทิศ | ถาม **1** คำถามเมื่อจำเป็นจริง — ห้ามถามเพื่อความสะดวก |
+| **Complex** | หลาย subsystem / หลายขั้น | ใช้ `planner` ก่อน |
+| **High Risk** | auth, payment, PII, prod deploy, destructive DB, authz | บังคับ safety + verification สูง |
+
+หนึ่ง request อาจเป็น Complex+High Risk พร้อมกัน
+
+## Minimum Skill Principle
+
+เลือก **ชุดเล็กสุดที่พอทำงานจริง** — ไม่เลือกเพราะ “อาจมีประโยชน์”
+
+`minimum sufficient ≠ always fewest`: งานเสี่ยงสูงต้องเพิ่ม safety แม้ skill เยอะขึ้น
+
+## Planner — เมื่อไหร่ถึงใช้
+
+**ใช้เมื่อ:** หลาย subsystem · dependency หลายขั้น · เปลี่ยน architecture · ambiguity สูง · risk สูง · ต้องประสานหลาย skill
+
+**ห้ามใช้เมื่อ:** rename · สีปุ่ม · typo · UI เล็ก · docs แก้สั้น · งาน 1–2 ไฟล์ที่ชัด
+
+## Mandatory safety
+
+| สัญญาณ | ต้องมี |
+|--------|--------|
+| Auth / session / permission / RBAC | `security` + `code-review` (+ มัก `backend`, `testing`) |
+| Payment / billing | `security` + `backend` + `testing` + `code-review` |
+| DB migration / schema | `database` + `testing` |
+| Production deploy | `devops` + `security` + `code-review` (+ `testing` เมื่อ release) |
+| Sensitive / PII / secrets | `security` |
+| Major refactor (boundaries) | `architecture` + `testing` + `code-review` |
+
+อย่าใส่ `security` กับ cosmetic UI · อย่าใส่ `database` ถ้าไม่แตะ persistence · อย่าใส่ `devops` ถ้าไม่แตะ deploy/infra
+
+## UI/UX vs Frontend
+
+| สัญญาณ | Skills |
+|--------|--------|
+| เปลี่ยน CSS / สี / ขนาด / spacing ของ element ที่มีอยู่แล้ว | `frontend` เท่านั้น |
+| ออกแบบ UI ใหม่ / ปรับ visual hierarchy / interaction / accessibility / UX | `ui-ux` → `frontend` |
+
+ห้ามเรียก `ui-ux` กับ trivial styling
+
+## Code Review — เมื่อไหร่ถึงใช้
+
+| ระดับงาน | `code-review` |
+|----------|----------------|
+| Simple change | ไม่จำเป็น |
+| Normal feature | เมื่อหลาย subsystem หรือมีความเสี่ยงเหมาะสม |
+| Significant / security-sensitive / production-critical | **บังคับ** |
+
+## Verification levels
+
+| Level | เมื่อ | ทำอะไร |
+|-------|------|--------|
+| **0** | trivial | reasoning / diff |
+| **1** | small change | lint/test ที่เกี่ยว |
+| **2** | feature | tests + code-review ตามความเหมาะสม |
+| **3** | security/prod | security + tests + code-review ครบ |
+
+## Instruction hierarchy
+
+```text
+multi-skill-router.mdc → _contract.md → REGISTRY → SKILL.md → docs/tests
+```
+
+รายละเอียด / ชุดทดสอบ: `docs/multi-skill.md` · inventory: `.cursor/skills/CAPABILITIES.md`

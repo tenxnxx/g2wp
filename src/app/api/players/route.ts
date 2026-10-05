@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
+import { attachPlayerToOpenBoard } from "@/lib/team-board";
 import {
   buildPaginationMeta,
   getSkip,
@@ -52,21 +54,29 @@ export async function GET(request: Request) {
           }
         : undefined;
 
-    const [total, players] = await Promise.all([
-      prisma.player.count({ where }),
-      prisma.player.findMany({
-        where,
-        include: { member: { select: { id: true, name: true } } },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/players", searchParams),
+      ["players"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, players] = await Promise.all([
+          prisma.player.count({ where }),
+          prisma.player.findMany({
+            where,
+            include: { member: { select: { id: true, name: true } } },
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+          }),
+        ]);
+        return {
+          data: players.map(serializePlayer),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: players.map(serializePlayer),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/players", error);
     return NextResponse.json(
@@ -112,6 +122,13 @@ export async function POST(request: Request) {
       include: { member: { select: { id: true, name: true } } },
     });
 
+    try {
+      await attachPlayerToOpenBoard(player.id, createBy);
+    } catch (error) {
+      console.error("attach player to team board", error);
+    }
+
+    await invalidateResource("players");
     return NextResponse.json(serializePlayer(player), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create player");

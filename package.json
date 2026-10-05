@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 8000",
+    "dev": "next dev -p 4000",
     "build": "prisma generate && next build",
     "build:release": "prisma migrate deploy && prisma generate && next build",
-    "start": "next start -p 8000",
+    "start": "next start -p 4000",
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
@@ -14,6 +14,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
     "smoke:auth": "node scripts/smoke-auth.mjs"
   },
   "dependencies": {
@@ -25,7 +27,9 @@
     "next": "16.3.4",
     "pg": "^8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "redis": "^5.12.1",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.13",
@@ -34,6 +38,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.2",
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",

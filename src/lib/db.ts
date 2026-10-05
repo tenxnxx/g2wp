@@ -1,8 +1,14 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
+function readPoolMax(): number {
+  const raw = Number(process.env.DATABASE_POOL_MAX ?? 5);
+  if (!Number.isInteger(raw) || raw < 1) return 5;
+  return Math.min(raw, 20);
+}
+
 /** Bump this whenever prisma/schema.prisma models/fields change (dev hot-reload). */
-const PRISMA_SCHEMA_VERSION = 18;
+const PRISMA_SCHEMA_VERSION = 30;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -15,7 +21,12 @@ function createPrismaClient() {
     throw new Error("DATABASE_URL is not set");
   }
 
-  const adapter = new PrismaPg({ connectionString });
+  const adapter = new PrismaPg({
+    connectionString,
+    max: readPoolMax(),
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 10_000,
+  });
   return new PrismaClient({ adapter });
 }
 
@@ -25,6 +36,10 @@ function getPrismaClient() {
     globalForPrisma.prismaSchemaVersion === PRISMA_SCHEMA_VERSION
   ) {
     return globalForPrisma.prisma;
+  }
+
+  if (globalForPrisma.prisma) {
+    void globalForPrisma.prisma.$disconnect();
   }
 
   const client = createPrismaClient();

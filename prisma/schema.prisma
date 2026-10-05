@@ -44,10 +44,13 @@ model Member {
   checkEventMembers CheckEventMember[]
   behaviorReports   BehaviorReport[]
   safes             Safe[]
+  appUser           AppUser?
 
   @@index([name])
   @@index([isLive])
+  @@index([isLive, name])
   @@index([groupId])
+  @@index([createdAt])
   @@map("members")
 }
 
@@ -74,9 +77,11 @@ model Player {
   updatedAt       DateTime         @updatedAt @map("updated_at")
   behaviors       Behavior[]
   behaviorReports BehaviorReport[]
+  teamAssignments TeamAssignment[]
 
   @@index([memberId])
   @@index([name])
+  @@index([createdAt])
   @@map("players")
 }
 
@@ -96,6 +101,7 @@ model Behavior {
   @@index([memberId])
   @@index([playerId])
   @@index([description])
+  @@index([createdAt])
   @@map("behaviors")
 }
 
@@ -138,20 +144,21 @@ model SetDate {
 }
 
 model CheckEvent {
-  id        String            @id @default(cuid())
-  setDateId String            @map("set_date_id")
-  setDate   SetDate           @relation(fields: [setDateId], references: [id], onDelete: Restrict)
+  id        String             @id @default(cuid())
+  setDateId String             @map("set_date_id")
+  setDate   SetDate            @relation(fields: [setDateId], references: [id], onDelete: Restrict)
   title     String?
-  status    CheckEventStatus  @default(draft)
-  createBy  String            @map("create_by")
-  openedAt  DateTime?         @map("opened_at")
-  closedAt  DateTime?         @map("closed_at")
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
+  status    CheckEventStatus   @default(draft)
+  createBy  String             @map("create_by")
+  openedAt  DateTime?          @map("opened_at")
+  closedAt  DateTime?          @map("closed_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
   members   CheckEventMember[]
 
   @@index([setDateId])
   @@index([status])
+  @@index([createdAt])
   @@map("check_events")
 }
 
@@ -202,4 +209,162 @@ model Safe {
   @@index([memberId])
   @@index([depositItemAt])
   @@map("safes")
+}
+
+enum AppUserRole {
+  admin
+  user
+}
+
+enum TypeServerKind {
+  official
+  premium
+}
+
+/// App profile for a Supabase Auth user. `id` is the auth user id.
+model AppUser {
+  id         String      @id
+  email      String      @unique
+  role       AppUserRole @default(user)
+  isUse      Boolean     @default(true) @map("is_use")
+  memberId   String?     @unique @map("member_id")
+  lastSeenAt DateTime    @default(now()) @map("last_seen_at")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  member     Member?     @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([role])
+  @@index([isUse])
+  @@map("users")
+}
+
+model Server {
+  id         String  @id @default(cuid())
+  serverName String  @map("server_name")
+  isUse      Boolean @default(true) @map("is_use")
+  bosses     Boss[]
+
+  @@index([serverName])
+  @@index([isUse])
+  @@map("servers")
+}
+
+model TypeServer {
+  id     String         @id @default(cuid())
+  type   TypeServerKind
+  isUse  Boolean        @default(true) @map("is_use")
+  bosses Boss[]
+
+  @@index([type])
+  @@index([isUse])
+  @@map("type_servers")
+}
+
+model City {
+  id       String  @id @default(cuid())
+  cityName String  @map("city_name")
+  isUse    Boolean @default(true) @map("is_use")
+  bosses   Boss[]
+
+  @@index([cityName])
+  @@index([isUse])
+  @@map("cities")
+}
+
+model Boss {
+  id           String     @id @default(cuid())
+  cityId       String     @map("city_id")
+  serverId     String     @map("server_id")
+  typeServerId String     @map("type_server_id")
+  hour         Int
+  minute       Int
+  second       Int        @default(0) @map("clock_second")
+  /// Manual column. Null follows the clock.
+  boardLane    String?    @map("board_lane")
+  createBy     String     @map("create_by")
+  updateBy     String?    @map("update_by")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  city         City       @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  server       Server     @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  typeServer   TypeServer @relation(fields: [typeServerId], references: [id], onDelete: Restrict)
+
+  @@unique([cityId, serverId, typeServerId])
+  @@index([cityId])
+  @@index([serverId])
+  @@index([typeServerId])
+  @@index([createdAt])
+  @@map("bosses")
+}
+
+enum TeamSlotType {
+  waiting
+  main
+  reserve
+  inactive
+}
+
+enum TeamSessionStatus {
+  draft
+  active
+  completed
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  sortOrder    Int      @default(0) @map("sort_order")
+  isUse        Boolean  @default(true) @map("is_use")
+  mainLimit    Int      @default(5) @map("main_limit")
+  reserveLimit Int      @default(3) @map("reserve_limit")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assignments TeamAssignment[]
+
+  @@index([isUse])
+  @@index([sortOrder])
+  @@map("teams")
+}
+
+model TeamSession {
+  id        String            @id @default(cuid())
+  title     String?
+  status    TeamSessionStatus @default(draft)
+  createBy  String            @map("create_by")
+  startedAt DateTime?         @map("started_at")
+  endedAt   DateTime?         @map("ended_at")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  assignments TeamAssignment[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("team_sessions")
+}
+
+model TeamAssignment {
+  id        String       @id @default(cuid())
+  sessionId String       @map("session_id")
+  playerId  String       @map("player_id")
+  teamId    String?      @map("team_id")
+  slotType  TeamSlotType @default(waiting) @map("slot_type")
+  sortOrder Int          @default(0) @map("sort_order")
+
+  session TeamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  player  Player      @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  team    Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createBy  String   @map("create_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, playerId])
+  @@index([sessionId])
+  @@index([playerId])
+  @@index([teamId])
+  @@index([slotType])
+  @@index([sessionId, teamId, slotType, sortOrder])
+  @@map("team_assignments")
 }

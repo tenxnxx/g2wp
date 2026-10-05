@@ -7,11 +7,15 @@ Stack: Next.js 16 · React 19 · Prisma 7 · Supabase Auth/Postgres · TanStack 
 ## Dev
 
 ```bash
-cp .env.example .env.local   # ใส่ค่าจริง — ห้าม commit secrets
+cp .env.example .env         # ใส่ค่าจริง — ห้าม commit secrets
 npm install
+npm run db:up                # Postgres ใน Docker ที่ localhost:5433
+npx prisma migrate deploy
 npx prisma generate
-npm run dev                  # http://localhost:8000
+npm run dev                  # http://localhost:4000
 ```
+
+ฐานข้อมูล local คือ Postgres 16 ใน `docker-compose.yml` (`g2wp` / `g2wp`, ฐาน `g2wp`, พอร์ต `5433` เพื่อไม่ชน Postgres ที่อาจเปิดอยู่บนเครื่องแล้ว). ข้อมูลอยู่ใน volume `g2wp_pgdata`. หยุดด้วย `npm run db:down` (volume ยังอยู่). ล็อกอินยังใช้ Supabase Auth ตามคีย์ใน `.env`
 
 ## Env ที่ต้องมี
 
@@ -21,15 +25,14 @@ npm run dev                  # http://localhost:8000
 | `DIRECT_URL` | Postgres direct (migrate) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key |
-| `ADMIN_EMAILS` | อีเมลแอดมิน คั่นด้วย `,` — **บังคับใน production** |
+| `ADMIN_EMAILS` | อีเมลแอดมิน คั่นด้วย `,` — นอกรายการนี้เป็นผู้ใช้ปกติ เปิดได้แค่หน้า `/` |
 | `UPSTASH_REDIS_REST_URL` / `TOKEN` | (ไม่บังคับ) rate limit ข้าม instance |
-
-หรือตั้ง `app_metadata.role = "admin"` ใน Supabase Auth
 
 ## Auth / ขอบเขตสาธารณะ
 
 - Edge guard: `src/proxy.ts` → `updateSession` (Next.js 16 ใช้ชื่อ Proxy แทน Middleware)
-- API แอดมิน: `requireAuth()` + allowlist
+- แอดมิน: อีเมลอยู่ใน `ADMIN_EMAILS` ใช้ทุกหน้าและทุก API จัดการ
+- ผู้ใช้ปกติ: ล็อกอินแล้วเปิดได้แค่ `/` (แดชบอร์ดอ่านอย่างเดียว)
 - สาธารณะ: `/report`, `/api/public/*`, `/login`
 
 ## Deploy (Netlify)
@@ -50,7 +53,9 @@ npx netlify env:set ADMIN_EMAILS "tenx@g2wp.com"
 
 | Script | ใช้ทำอะไร |
 |--------|-----------|
-| `npm run dev` | พัฒนาพอร์ต 8000 |
+| `npm run db:up` | เปิด Postgres ใน Docker |
+| `npm run db:down` | หยุด Postgres (ข้อมูลใน volume ยังอยู่) |
+| `npm run dev` | พัฒนาพอร์ต 4000 |
 | `npm run build` | generate + build |
 | `npm run build:release` | migrate + generate + build |
 | `npm run db:deploy` | `prisma migrate deploy` |

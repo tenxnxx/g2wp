@@ -6,6 +6,7 @@ import {
   readJsonBody,
 } from "@/lib/api-errors";
 import { REPORT_EVIDENCE_URL_MAX } from "@/lib/behavior-reports";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import {
   buildPaginationMeta,
@@ -63,21 +64,29 @@ export async function GET(request: Request) {
         }
       : undefined;
 
-    const [total, behaviors] = await Promise.all([
-      prisma.behavior.count({ where }),
-      prisma.behavior.findMany({
-        where,
-        include: includeRelations,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/behaviors", searchParams),
+      ["behaviors"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, behaviors] = await Promise.all([
+          prisma.behavior.count({ where }),
+          prisma.behavior.findMany({
+            where,
+            include: includeRelations,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+          }),
+        ]);
+        return {
+          data: behaviors.map(serializeBehavior),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: behaviors.map(serializeBehavior),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/behaviors", error);
     return NextResponse.json(
@@ -145,6 +154,7 @@ export async function POST(request: Request) {
       include: includeRelations,
     });
 
+    await invalidateResource("behaviors");
     return NextResponse.json(serializeBehavior(behavior), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create behavior");

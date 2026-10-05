@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { actorLabel, requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import {
   buildPaginationMeta,
@@ -47,20 +48,28 @@ export async function GET(request: Request) {
     const { page, limit } = parsePaginationParams(searchParams);
     const skip = getSkip(page, limit);
 
-    const [total, items] = await Promise.all([
-      prisma.setDate.count(),
-      prisma.setDate.findMany({
-        orderBy: { date: "desc" },
-        skip,
-        take: limit,
-        include: { _count: { select: { checkEvents: true } } },
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/set-dates", searchParams),
+      ["set-dates"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, items] = await Promise.all([
+          prisma.setDate.count(),
+          prisma.setDate.findMany({
+            orderBy: { date: "desc" },
+            skip,
+            take: limit,
+            include: { _count: { select: { checkEvents: true } } },
+          }),
+        ]);
+        return {
+          data: items.map(serializeSetDate),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: items.map(serializeSetDate),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/set-dates", error);
     return NextResponse.json(
@@ -93,6 +102,7 @@ export async function POST(request: Request) {
       data: { date, createBy },
     });
 
+    await invalidateResource("set-dates");
     return NextResponse.json(serializeSetDate(item), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create set date");

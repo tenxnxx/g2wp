@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { invalidateResource } from "@/lib/cache";
 import { prismaErrorResponse } from "@/lib/api-errors";
 import {
   checkEventInclude,
@@ -87,6 +88,7 @@ export async function POST(_request: Request, { params }: Params) {
       });
     });
 
+    await invalidateResource("check-events");
     return NextResponse.json(serializeCheckEvent(opened));
   } catch (error) {
     if (error instanceof NotFoundError) {

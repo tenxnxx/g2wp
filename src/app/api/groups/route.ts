@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { serializeGroup } from "@/lib/groups";
 import {
@@ -35,21 +36,29 @@ export async function GET(request: Request) {
         : {}),
     };
 
-    const [total, rows] = await Promise.all([
-      prisma.group.count({ where }),
-      prisma.group.findMany({
-        where,
-        orderBy: [{ isUse: "desc" }, { groupName: "asc" }],
-        skip,
-        take: limit,
-        include: { _count: { select: { members: true } } },
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/groups", searchParams),
+      ["groups"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, rows] = await Promise.all([
+          prisma.group.count({ where }),
+          prisma.group.findMany({
+            where,
+            orderBy: [{ isUse: "desc" }, { groupName: "asc" }],
+            skip,
+            take: limit,
+            include: { _count: { select: { members: true } } },
+          }),
+        ]);
+        return {
+          data: rows.map(serializeGroup),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: rows.map(serializeGroup),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/groups", error);
     return NextResponse.json(
@@ -86,6 +95,7 @@ export async function POST(request: Request) {
       include: { _count: { select: { members: true } } },
     });
 
+    await invalidateResource("groups");
     return NextResponse.json(serializeGroup(group), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create group");

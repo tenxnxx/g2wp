@@ -5,6 +5,7 @@ import {
   prismaErrorResponse,
   readJsonBody,
 } from "@/lib/api-errors";
+import { invalidateResource } from "@/lib/cache";
 import { REPORT_EVIDENCE_URL_MAX } from "@/lib/behavior-reports";
 import { prisma } from "@/lib/db";
 
@@ -178,6 +179,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: includeRelations,
     });
 
+    await invalidateResource("behaviors");
     return NextResponse.json(serializeBehavior(behavior));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update behavior");
@@ -191,6 +193,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.behavior.delete({ where: { id } });
+    await invalidateResource("behaviors");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete behavior");

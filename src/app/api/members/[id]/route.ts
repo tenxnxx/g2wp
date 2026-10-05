@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api-auth";
+import { requireAuth, requireUser } from "@/lib/api-auth";
 import {
   normalizeHttpUrl,
   prismaErrorResponse,
   readJsonBody,
 } from "@/lib/api-errors";
+import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { parseGroupIdInput, serializeMember } from "@/lib/members";
 
@@ -33,79 +34,94 @@ async function resolveAssignableGroupId(
 
 export async function GET(request: Request, { params }: Params) {
   try {
-    const auth = await requireAuth();
-    if (auth.error) return auth.error;
-
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const detail = searchParams.get("detail") === "1";
+    const auth = detail ? await requireUser() : await requireAuth();
+    if (auth.error) return auth.error;
 
     if (!detail) {
-      const member = await prisma.member.findUnique({
-        where: { id },
-        include: { group: { select: groupSelect } },
-      });
-      if (!member) {
+      const body = await remember(
+        `members:${id}`,
+        ["members"],
+        CACHE_TTL.detail,
+        async () => {
+          const member = await prisma.member.findUnique({
+            where: { id },
+            include: { group: { select: groupSelect } },
+          });
+          return member ? serializeMember(member) : null;
+        },
+      );
+      if (!body) {
         return NextResponse.json({ error: "Member not found" }, { status: 404 });
       }
-      return NextResponse.json(serializeMember(member));
+      return NextResponse.json(body);
     }
 
-    const member = await prisma.member.findUnique({
-      where: { id },
-      include: {
-        group: { select: groupSelect },
-        players: {
-          orderBy: { createdAt: "desc" },
-          take: 100,
-          select: {
-            id: true,
-            name: true,
-            createBy: true,
-            createdAt: true,
+    const body = await remember(
+      `members:${id}:detail`,
+      ["members"],
+      CACHE_TTL.detail,
+      async () => {
+        const member = await prisma.member.findUnique({
+          where: { id },
+          include: {
+            group: { select: groupSelect },
+            players: {
+              orderBy: { createdAt: "desc" },
+              take: 100,
+              select: {
+                id: true,
+                name: true,
+                createBy: true,
+                createdAt: true,
+              },
+            },
+            behaviors: {
+              orderBy: { createdAt: "desc" },
+              take: 50,
+              select: {
+                id: true,
+                description: true,
+                createBy: true,
+                createdAt: true,
+                player: { select: { id: true, name: true } },
+              },
+            },
           },
-        },
-        behaviors: {
-          orderBy: { createdAt: "desc" },
-          take: 50,
-          select: {
-            id: true,
-            description: true,
-            createBy: true,
-            createdAt: true,
-            player: { select: { id: true, name: true } },
-          },
-        },
+        });
+        if (!member) return null;
+        const [playerCount, behaviorCount] = await Promise.all([
+          prisma.player.count({ where: { memberId: id } }),
+          prisma.behavior.count({ where: { memberId: id } }),
+        ]);
+        return {
+          ...serializeMember(member),
+          playerCount,
+          behaviorCount,
+          players: member.players.map((player) => ({
+            id: player.id,
+            name: player.name,
+            createBy: player.createBy,
+            createdAt: player.createdAt.toISOString(),
+          })),
+          behaviors: member.behaviors.map((behavior) => ({
+            id: behavior.id,
+            description: behavior.description,
+            createBy: behavior.createBy,
+            createdAt: behavior.createdAt.toISOString(),
+            player: behavior.player,
+          })),
+        };
       },
-    });
+    );
 
-    if (!member) {
+    if (!body) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    const [playerCount, behaviorCount] = await Promise.all([
-      prisma.player.count({ where: { memberId: id } }),
-      prisma.behavior.count({ where: { memberId: id } }),
-    ]);
-
-    return NextResponse.json({
-      ...serializeMember(member),
-      playerCount,
-      behaviorCount,
-      players: member.players.map((player) => ({
-        id: player.id,
-        name: player.name,
-        createBy: player.createBy,
-        createdAt: player.createdAt.toISOString(),
-      })),
-      behaviors: member.behaviors.map((behavior) => ({
-        id: behavior.id,
-        description: behavior.description,
-        createBy: behavior.createBy,
-        createdAt: behavior.createdAt.toISOString(),
-        player: behavior.player,
-      })),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/members/[id]", error);
     return NextResponse.json(
@@ -204,6 +220,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: { group: { select: groupSelect } },
     });
 
+    await invalidateResource("members");
     return NextResponse.json(serializeMember(member));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update member");
@@ -217,6 +234,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.member.delete({ where: { id } });
+    await invalidateResource("members");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete member");

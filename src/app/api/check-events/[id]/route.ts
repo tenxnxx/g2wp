@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { invalidateResource } from "@/lib/cache";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import {
   checkEventInclude,
@@ -86,6 +87,7 @@ export async function PATCH(request: Request, { params }: Params) {
       include: checkEventInclude,
     });
 
+    await invalidateResource("check-events");
     return NextResponse.json(serializeCheckEvent(event));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update check event");
@@ -110,6 +112,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     }
 
     await prisma.checkEvent.delete({ where: { id } });
+    await invalidateResource("check-events");
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete check event");

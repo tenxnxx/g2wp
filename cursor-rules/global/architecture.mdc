@@ -1,0 +1,157 @@
+---
+description: Architecture — DDD, Clean Architecture, SOLID, layer boundaries
+globs:
+  - "**/ARCHITECTURE.md"
+  - "**/domain/**"
+  - "**/application/**"
+  - "**/infrastructure/**"
+  - "apps/backend/src/modules/**"
+  - "apps/backend/src/services/**"
+  - "docs/adr/**"
+alwaysApply: false
+---
+
+# Architecture Rules
+
+Scope: **Project / Architecture** — ออกแบบหรือแก้โครงสร้างระบบ
+
+Non-goals: รายบรรทัด coding quality → `coding.mdc` · secure coding → `security.mdc`
+
+Priority: ชนะ `coding.mdc` เรื่อง layers และ boundaries
+
+ใช้เมื่อออกแบบหรือแก้โครงสร้างระบบ · รายละเอียด coding ทั่วไป → `coding.mdc` · security → `security.mdc`
+
+ห้ามสร้าง architecture complexity โดยไม่มีเหตุผล — เลือกตาม complexity จริงของปัญหา
+
+## Principles
+
+- Domain-Driven Design (DDD)
+- Clean Architecture
+- SOLID
+- Dependency Inversion
+- Hexagonal Architecture (ports & adapters)
+- Modular Architecture
+- Separation of Concerns
+- Sub-agent Architecture (เมื่อใช้ multi-agent)
+
+## Dependency Direction
+
+```text
+Presentation
+      ↓
+Application
+      ↓
+Domain
+```
+
+```text
+Infrastructure
+      ↓
+Application / Domain interfaces
+```
+
+Domain ห้าม depend on:
+
+- Database
+- ORM
+- HTTP
+- Framework
+- Redis
+- Docker
+- External APIs
+- UI
+
+Infrastructure implement ports ที่ Domain/Application ประกาศ — ไม่ให้ Domain import Infrastructure
+
+## Layer Responsibilities
+
+### Domain
+
+- Entities
+- Value Objects
+- Aggregates
+- Domain Services
+- Domain Events
+- Business Rules
+- Repository interfaces (ports)
+
+### Application
+
+- Use Cases
+- Application Services
+- orchestration
+- transaction boundaries
+- coordination ระหว่าง Domain กับ ports
+
+### Infrastructure
+
+- Database
+- ORM
+- Redis
+- Queue
+- HTTP clients
+- Filesystem
+- External APIs
+- framework adapters
+
+### Presentation
+
+- Routes
+- Controllers
+- CLI
+- WebSocket
+- Input/output handling
+
+Controller flow:
+
+```text
+input → use case → output
+```
+
+ห้ามใส่ business logic จำนวนมากใน Presentation
+
+## DDD Principles
+
+- **Bounded contexts** — แยกภาษาและโมเดลตามบริบทธุรกิจ
+- **Aggregates** — consistency boundary; อ้างอิงข้าม aggregate ด้วย ID
+- **Entities** — identity + lifecycle
+- **Value Objects** — immutable, equality by value
+- **Repositories** — abstraction สำหรับ aggregate persistence (interface ใน Domain)
+- **Domain Events** — สิ่งที่เกิดขึ้นในโดเมน; ไม่ผูก transport
+- **Ubiquitous language** — ใช้ศัพท์เดียวกับธุรกิจในโค้ดและ docs
+
+อย่า map database schema เป็น domain model โดยอัตโนมัติ
+
+## Hexagonal / Modular Notes
+
+- Ports = interfaces ที่ Application/Domain ต้องการ
+- Adapters = Infrastructure implementations
+- Module boundaries ชัดเจน; ลด coupling ข้าม module
+- Shared kernel ใช้ sparingly
+
+## Sub-agent Architecture
+
+เมื่อใช้ sub-agents:
+
+```text
+Main Agent
+→ Planning
+→ Task Delegation
+→ Sub-agent
+→ Result
+→ Validation
+→ Integration
+→ Verification
+```
+
+- แต่ละ sub-agent มี responsibility / scope / input / output ชัด
+- จำกัด file ownership — หลีกเลี่ยงหลาย agent แก้ไฟล์เดียวกันพร้อมกัน
+- Sub-agent ห้ามเปลี่ยน architecture หลักโดยพลการ
+- Main agent ตรวจผลก่อน integrate
+
+## Anti-patterns
+
+- Domain ที่รู้จัก SQL / Fastify / Redis โดยตรง
+- God modules / circular dependencies ระหว่าง layers
+- Abstraction ซ้อนหลายชั้นโดยไม่มี use case จริง
+- Copy architecture จากโปรเจกต์อื่นโดยไม่เข้ากับปัญหา

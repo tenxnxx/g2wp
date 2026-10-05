@@ -1,0 +1,36 @@
+---
+description: บันทึกงาน agent/skills ลง Obsidian work log
+alwaysApply: true
+---
+
+# Obsidian Work Log
+
+Scope: **Documentation** — งาน agent, skills, setup, rule changes
+
+Non-goals: ไม่แทนรายงานสั้นใน `core.mdc` · ไม่บันทึกทุกข้อความแชท
+
+Priority: หลัง core · คู่กับ `docs/ai-skills/Ai skill-rule.md`
+
+## ที่เก็บ
+
+**Primary (Mac):** `/Users/ildiamante/Documents/Obsidian Vault/AI Skills/`
+
+**Fallback (repo):** `docs/ai-skills/`
+
+| ไฟล์ | เมื่อ |
+|------|-------|
+| `Work Log.md` | ทุก session สำคัญ |
+| `Sessions/YYYY-MM-DD.md` | รายวัน |
+| `Ai skill-rule.md` | rule architecture เปลี่ยน |
+| `Catalog.md` | skills/rules เปลี่ยน |
+| `Install Guide.md` | setup เปลี่ยน |
+
+## รูปแบบ
+
+เวลา (`YYYY-MM-DD HH:MM`) · ทำอะไร/ผล · ไฟล์ที่เกี่ยว · ขั้นถัดไป — ภาษาไทย
+
+## จังหวะ
+
+- เริ่มงานสำคัญ → session note
+- จบช่วงใหญ่ / เปลี่ยน rules → Work Log + `Ai skill-rule.md` ถ้าจำเป็น
+- ติดตั้ง skill → อัปเดต Catalog

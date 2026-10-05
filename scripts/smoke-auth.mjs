@@ -7,16 +7,18 @@
  *   SMOKE_BASE_URL=https://your-site.netlify.app npm run smoke:auth
  */
 
-const BASE = (process.env.SMOKE_BASE_URL || "http://localhost:8000").replace(
+const BASE = (process.env.SMOKE_BASE_URL || "http://localhost:4000").replace(
   /\/$/,
   "",
 );
 
 const ADMIN_PATHS = [
   "/api/dashboard",
+  "/api/users",
   "/api/members",
   "/api/groups",
   "/api/players",
+  "/api/teams/board",
   "/api/behaviors",
   "/api/reports",
   "/api/items",

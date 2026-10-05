@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { cacheKey, CACHE_TTL, remember } from "@/lib/cache";
 import { serializeBehaviorReport } from "@/lib/behavior-reports";
 import { prisma } from "@/lib/db";
 import {
@@ -42,20 +43,28 @@ export async function GET(request: Request) {
         : {}),
     };
 
-    const [total, rows] = await Promise.all([
-      prisma.behaviorReport.count({ where }),
-      prisma.behaviorReport.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/reports", searchParams),
+      ["reports"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, rows] = await Promise.all([
+          prisma.behaviorReport.count({ where }),
+          prisma.behaviorReport.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
+          }),
+        ]);
+        return {
+          data: rows.map(serializeBehaviorReport),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: rows.map(serializeBehaviorReport),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/reports", error);
     return NextResponse.json(

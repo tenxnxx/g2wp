@@ -34,11 +34,18 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
   const mounted = useSyncExternalStore(
     subscribeNoop,
     () => true,
     () => false,
   );
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeDisabledRef.current = closeDisabled;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -47,18 +54,22 @@ export function Modal({
     document.body.style.overflow = "hidden";
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !closeDisabled) onClose();
+      if (event.key === "Escape" && !closeDisabledRef.current) onCloseRef.current();
     };
 
     window.addEventListener("keydown", onKeyDown);
-    const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => {
+      const panel = panelRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      panel.focus();
+    }, 0);
 
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
       window.clearTimeout(focusTimer);
     };
-  }, [open, onClose, closeDisabled]);
+  }, [open]);
 
   if (!open || !mounted) return null;
 

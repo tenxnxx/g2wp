@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
+import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import { DESCRIPTION_MAX } from "@/lib/field-limits";
 import {
@@ -66,21 +67,29 @@ export async function GET(request: Request) {
         : {}),
     };
 
-    const [total, rows] = await Promise.all([
-      prisma.safe.count({ where }),
-      prisma.safe.findMany({
-        where,
-        orderBy: { depositItemAt: "desc" },
-        skip,
-        take: limit,
-        include: safeInclude,
-      }),
-    ]);
+    const body = await remember(
+      cacheKey("/api/safes", searchParams),
+      ["safes"],
+      CACHE_TTL.list,
+      async () => {
+        const [total, rows] = await Promise.all([
+          prisma.safe.count({ where }),
+          prisma.safe.findMany({
+            where,
+            orderBy: { depositItemAt: "desc" },
+            skip,
+            take: limit,
+            include: safeInclude,
+          }),
+        ]);
+        return {
+          data: rows.map(serializeSafe),
+          meta: buildPaginationMeta(total, page, limit),
+        };
+      },
+    );
 
-    return NextResponse.json({
-      data: rows.map(serializeSafe),
-      meta: buildPaginationMeta(total, page, limit),
-    });
+    return NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/safes", error);
     return NextResponse.json(
@@ -154,6 +163,7 @@ export async function POST(request: Request) {
       include: safeInclude,
     });
 
+    await invalidateResource("safes");
     return NextResponse.json(serializeSafe(safe), { status: 201 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to create safe");
