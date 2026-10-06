@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-const DESKTOP_QUERY = "(min-width: 768px)";
+const DESKTOP_QUERY = "(min-width: 1024px)";
 
 type SidebarContextValue = {
   /** Expanded rail (desktop) or drawer open (mobile) */

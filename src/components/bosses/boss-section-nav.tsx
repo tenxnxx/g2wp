@@ -16,7 +16,7 @@ export function BossSectionNav() {
   return (
     <nav
       aria-label="จัดการข้อมูลบอส"
-      className="flex flex-wrap gap-2"
+      className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 [&::-webkit-scrollbar]:hidden"
     >
       {LINKS.map((item) => {
         const active = pathname === item.href;
@@ -25,7 +25,7 @@ export function BossSectionNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium transition ${
+            className={`inline-flex h-11 shrink-0 items-center justify-center rounded-lg px-4 text-sm font-medium whitespace-nowrap transition ${
               active
                 ? "bg-[var(--accent)] text-[var(--ink)]"
                 : "border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink)] hover:bg-[var(--surface-hover)]"

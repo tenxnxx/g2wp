@@ -131,6 +131,8 @@ export function BossTable({ onEdit }: BossTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Boss | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTone, setDropTone] = useState<BossTimeGroup | null>(null);
+  const [phoneLane, setPhoneLane] = useState<BossTimeGroup>("upcoming");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -140,7 +142,6 @@ export function BossTable({ onEdit }: BossTableProps) {
   }, [searchInput]);
 
   const [layoutNow, setLayoutNow] = useState(() => Date.now());
-  const [clockConnected, setClockConnected] = useState(false);
 
   const listQuery = useQuery({
     queryKey: ["bosses", "board", search, cityId, serverId, typeServerId],
@@ -201,15 +202,20 @@ export function BossTable({ onEdit }: BossTableProps) {
   );
 
   const items = listQuery.data ?? EMPTY_ARRAY;
+  const itemsRef = useRef(items);
 
   useEffect(() => {
-    return subscribeBossClock((next, isConnected) => {
-      setClockConnected((prev) => (prev === isConnected ? prev : isConnected));
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    return subscribeBossClock((next) => {
+      const rows = itemsRef.current;
       setLayoutNow((prev) =>
-        boardGroupKey(items, prev) === boardGroupKey(items, next) ? prev : next,
+        boardGroupKey(rows, prev) === boardGroupKey(rows, next) ? prev : next,
       );
     });
-  }, [items]);
+  }, []);
 
   const ordered = [...items].sort((a, b) => cardElapsed(b, layoutNow) - cardElapsed(a, layoutNow));
   const overdue = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "over");
@@ -269,14 +275,17 @@ export function BossTable({ onEdit }: BossTableProps) {
   const writeLaneRef = useRef<
     (item: Boss, write: LaneWrite, quiet: boolean) => void
   >(() => {});
-  writeLaneRef.current = (item, write, quiet) => {
-    const current = pendingMoves.get(item.id);
-    if (current && sameLaneWrite(current, write) && Date.now() - current.at < 8000) return;
-    pendingMoves.set(item.id, { ...write, at: Date.now() });
-    if (quiet) quietMoves.add(item.id);
-    else quietMoves.delete(item.id);
-    laneMutation.mutate({ id: item.id, ...write });
-  };
+
+  useEffect(() => {
+    writeLaneRef.current = (item, write, quiet) => {
+      const current = pendingMoves.get(item.id);
+      if (current && sameLaneWrite(current, write) && Date.now() - current.at < 8000) return;
+      pendingMoves.set(item.id, { ...write, at: Date.now() });
+      if (quiet) quietMoves.add(item.id);
+      else quietMoves.delete(item.id);
+      laneMutation.mutate({ id: item.id, ...write });
+    };
+  }, [laneMutation]);
 
   useEffect(() => {
     for (const item of items) {
@@ -333,6 +342,7 @@ export function BossTable({ onEdit }: BossTableProps) {
         ? { hour: null, minute: null, second: null }
         : clockForGroup(tone, now);
     writeLaneRef.current(current, { boardLane: lane, ...clock }, false);
+    setPhoneLane(tone);
   }
 
   const deleteMutation = useMutation({
@@ -377,38 +387,37 @@ export function BossTable({ onEdit }: BossTableProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-panel)]">
-      <div className="flex flex-col gap-4 border-b border-[var(--line)] px-5 py-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
-              รายการบอส
-            </h2>
-            <p className="text-sm text-[var(--ink-muted)]">
-              เทียบเวลาปัจจุบันกับเวลาที่เลือกตอนบันทึก
-              {clockConnected ? " · เวลาสด" : ""}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto">
-            <Input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="ค้นหา..."
-              className="sm:w-64"
-              aria-label="ค้นหาบอส"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void handleRefresh()}
-              disabled={listQuery.isFetching}
-            >
-              {listQuery.isFetching ? <Spinner /> : null}
-              รีเฟรช
-            </Button>
-          </div>
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-panel)]">
+      <div className="flex flex-col gap-3 border-b border-[var(--line)] px-4 py-3 lg:px-5 lg:py-4">
+        <div className="flex items-center gap-2">
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="ค้นหาเมืองหรือเซิร์ฟเวอร์"
+            className="h-11 min-w-0 flex-1"
+            aria-label="ค้นหาบอส"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-11 shrink-0 px-3 lg:hidden"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            กรอง
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-11 shrink-0 px-3"
+            onClick={() => void handleRefresh()}
+            disabled={listQuery.isFetching}
+          >
+            {listQuery.isFetching ? <Spinner /> : null}
+            รีเฟรช
+          </Button>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className={`${filtersOpen ? "grid" : "hidden"} gap-2 lg:grid sm:grid-cols-3`}>
           <SearchableSelect
             value={cityId}
             onChange={(value) => setCityId(value)}
@@ -442,7 +451,70 @@ export function BossTable({ onEdit }: BossTableProps) {
           description="เพิ่มเมือง เซิร์ฟเวอร์ และประเภทก่อน แล้วกดเพิ่มบอส"
         />
       ) : (
-        <div className="grid gap-4 p-4 xl:grid-cols-3">
+        <>
+          <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_92%,transparent)] px-3 py-2 backdrop-blur-md lg:hidden">
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-raised)] p-1">
+              {(
+                [
+                  ["over", bossWindowCopy.overTitle, overdue.length],
+                  ["fresh", bossWindowCopy.freshTitle, recent.length],
+                  ["upcoming", bossWindowCopy.upcomingTitle, upcoming.length],
+                ] as const
+              ).map(([tone, title, count]) => (
+                <button
+                  key={tone}
+                  type="button"
+                  aria-pressed={phoneLane === tone}
+                  onClick={() => setPhoneLane(tone)}
+                  className={`flex h-11 items-center justify-center gap-1 rounded-lg px-1 text-sm font-semibold ${
+                    phoneLane === tone
+                      ? "bg-[var(--surface)] text-[var(--ink)]"
+                      : "text-[var(--ink-muted)]"
+                  }`}
+                >
+                  <span className="truncate">{title}</span>
+                  <span className="tabular-nums text-xs">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="p-3 lg:hidden">
+            <BossTimeTable
+              title={
+                phoneLane === "over"
+                  ? bossWindowCopy.overTitle
+                  : phoneLane === "fresh"
+                    ? bossWindowCopy.freshTitle
+                    : bossWindowCopy.upcomingTitle
+              }
+              count={
+                phoneLane === "over"
+                  ? overdue.length
+                  : phoneLane === "fresh"
+                    ? recent.length
+                    : upcoming.length
+              }
+              tone={phoneLane}
+              items={
+                phoneLane === "over" ? overdue : phoneLane === "fresh" ? recent : upcoming
+              }
+              draggingId={draggingId}
+              hot={false}
+              showMove
+              onEdit={onEdit}
+              onDelete={setDeleteTarget}
+              onDragCard={setDraggingId}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setDropTone(null);
+              }}
+              onDragOverColumn={() => setDropTone(phoneLane)}
+              onDropCard={(id) => placeCard(id, phoneLane)}
+              onMove={placeCard}
+              deletePending={deleteMutation.isPending}
+            />
+          </div>
+          <div className="hidden gap-4 p-4 lg:grid lg:grid-cols-3">
           <BossTimeTable
             title={bossWindowCopy.overTitle}
             count={overdue.length}
@@ -459,6 +531,7 @@ export function BossTable({ onEdit }: BossTableProps) {
             }}
             onDragOverColumn={() => setDropTone("over")}
             onDropCard={(id) => placeCard(id, "over")}
+            onMove={placeCard}
             deletePending={deleteMutation.isPending}
           />
           <BossTimeTable
@@ -477,6 +550,7 @@ export function BossTable({ onEdit }: BossTableProps) {
             }}
             onDragOverColumn={() => setDropTone("fresh")}
             onDropCard={(id) => placeCard(id, "fresh")}
+            onMove={placeCard}
             deletePending={deleteMutation.isPending}
           />
           <BossTimeTable
@@ -495,9 +569,11 @@ export function BossTable({ onEdit }: BossTableProps) {
             }}
             onDragOverColumn={() => setDropTone("upcoming")}
             onDropCard={(id) => placeCard(id, "upcoming")}
+            onMove={placeCard}
             deletePending={deleteMutation.isPending}
           />
-        </div>
+          </div>
+        </>
       )}
 
       <ConfirmModal
@@ -527,12 +603,14 @@ function BossTimeTable({
   items,
   draggingId,
   hot,
+  showMove = false,
   onEdit,
   onDelete,
   onDragCard,
   onDragEnd,
   onDragOverColumn,
   onDropCard,
+  onMove,
   deletePending,
 }: {
   title: string;
@@ -541,12 +619,14 @@ function BossTimeTable({
   items: Boss[];
   draggingId: string | null;
   hot: boolean;
+  showMove?: boolean;
   onEdit: (item: Boss) => void;
   onDelete: (item: Boss) => void;
   onDragCard: (id: string) => void;
   onDragEnd: () => void;
   onDragOverColumn: () => void;
   onDropCard: (id: string) => void;
+  onMove: (id: string, tone: BossTimeGroup) => void;
   deletePending: boolean;
 }) {
   const over = tone === "over";
@@ -554,18 +634,18 @@ function BossTimeTable({
   const sectionClass = over
     ? "overflow-hidden rounded-xl border border-[var(--warning)]/35 bg-[var(--surface-raised)]"
     : upcomingTone
-      ? "overflow-hidden rounded-xl border border-[#7eb6d9]/40 bg-[var(--surface-raised)]"
-      : "overflow-hidden rounded-xl border border-[var(--accent)]/40 bg-[var(--surface-raised)]";
+      ? "overflow-hidden rounded-xl border border-[var(--accent)]/40 bg-[var(--surface-raised)]"
+      : "overflow-hidden rounded-xl border border-[#7eb6d9]/40 bg-[var(--surface-raised)]";
   const headerClass = over
     ? "border-b border-[var(--warning)]/25 bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-4 py-3"
     : upcomingTone
-      ? "border-b border-[#7eb6d9]/25 bg-[color-mix(in_oklab,#7eb6d9_14%,transparent)] px-4 py-3"
-      : "border-b border-[var(--accent)]/25 bg-[var(--accent-soft)] px-4 py-3";
+      ? "border-b border-[var(--accent)]/25 bg-[var(--accent-soft)] px-4 py-3"
+      : "border-b border-[#7eb6d9]/25 bg-[color-mix(in_oklab,#7eb6d9_14%,transparent)] px-4 py-3";
   const elapsedClass = over
     ? "text-xs tabular-nums text-[var(--warning)]"
     : upcomingTone
-      ? "text-xs tabular-nums text-[#9ec9e0]"
-      : "text-xs tabular-nums text-[var(--accent-strong)]";
+      ? "text-xs tabular-nums text-[var(--accent-strong)]"
+      : "text-xs tabular-nums text-[#9ec9e0]";
 
   return (
     <section
@@ -582,7 +662,7 @@ function BossTimeTable({
         if (id) onDropCard(id);
       }}
     >
-      <header className={`relative ${headerClass}`}>
+      <header className={`relative ${headerClass} ${showMove ? "hidden" : ""}`}>
         <h3 className="text-center font-[family-name:var(--font-display)] text-base font-semibold">
           {title}
         </h3>
@@ -590,7 +670,11 @@ function BossTimeTable({
           {count}
         </span>
       </header>
-      <div className="flex max-h-[34rem] min-h-36 flex-col gap-2 overflow-auto p-3">
+      <div
+        className={`flex min-h-36 flex-col gap-2 p-3 ${
+          showMove ? "" : "max-h-[34rem] overflow-auto"
+        }`}
+      >
         {items.length === 0 ? (
           <p className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--line)] px-4 py-10 text-center text-sm text-[var(--ink-muted)]">
             {draggingId ? "วางการ์ดที่นี่" : "ไม่มีบอสในกลุ่มนี้"}
@@ -599,9 +683,9 @@ function BossTimeTable({
           items.map((item) => (
             <article
               key={item.id}
-              draggable
+              draggable={!showMove}
               onDragStart={(event) => {
-                if ((event.target as HTMLElement).closest("button")) {
+                if (showMove || (event.target as HTMLElement).closest("button")) {
                   event.preventDefault();
                   return;
                 }
@@ -610,9 +694,9 @@ function BossTimeTable({
                 onDragCard(item.id);
               }}
               onDragEnd={onDragEnd}
-              className={`cursor-grab rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 active:cursor-grabbing ${
-                draggingId === item.id ? "opacity-40" : "hover:bg-[var(--surface-hover)]"
-              }`}
+              className={`rounded-xl border border-[var(--line)] bg-[var(--surface)] ${
+                showMove ? "p-4" : "cursor-grab p-3 active:cursor-grabbing"
+              } ${draggingId === item.id ? "opacity-40" : "hover:bg-[var(--surface-hover)]"}`}
             >
               <div className="min-w-0">
                 <p className="truncate font-[family-name:var(--font-display)] text-lg font-semibold leading-tight tracking-tight text-[var(--ink)]">
@@ -646,12 +730,26 @@ function BossTimeTable({
                   />
                 </div>
               )}
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <div className="flex gap-1.5">
+              <div className={showMove ? "mt-4 grid grid-cols-2 gap-2" : "mt-3 flex items-center justify-end gap-2"}>
+                {showMove
+                  ? (["over", "fresh", "upcoming"] as const)
+                      .filter((target) => target !== tone)
+                      .map((target) => (
+                        <button
+                          key={target}
+                          type="button"
+                          className="h-11 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-sm font-medium text-[var(--ink)]"
+                          onClick={() => onMove(item.id, target)}
+                        >
+                          ไป{target === "over" ? "ไม่พบบอส" : target === "fresh" ? "รอเกิด" : "เกิดแล้ว"}
+                        </button>
+                      ))
+                  : null}
+                <div className={showMove ? "contents" : "flex gap-1.5"}>
                   <Button
                     type="button"
                     variant="secondary"
-                    className="h-8 px-2.5 text-xs"
+                    className={showMove ? "h-11 text-sm" : "h-8 px-2.5 text-xs"}
                     onClick={() => onEdit(item)}
                   >
                     แก้ไข
@@ -659,7 +757,7 @@ function BossTimeTable({
                   <Button
                     type="button"
                     variant="danger"
-                    className="h-8 px-2.5 text-xs"
+                    className={showMove ? "h-11 text-sm" : "h-8 px-2.5 text-xs"}
                     disabled={deletePending}
                     onClick={() => onDelete(item)}
                   >

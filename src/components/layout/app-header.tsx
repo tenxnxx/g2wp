@@ -40,7 +40,8 @@ export function AppHeader() {
       : "เปิดเมนู";
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--canvas)_82%,transparent)] px-4 backdrop-blur-md md:px-8">
+    <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--canvas)_92%,transparent)] px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:px-8">
+      <div className="flex h-14 items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -59,7 +60,7 @@ export function AppHeader() {
           <p className="truncate font-[family-name:var(--font-display)] text-sm font-semibold tracking-tight text-[var(--ink)]">
             Member G2WP
           </p>
-          <p className="truncate text-[11px] text-[var(--ink-muted)]">
+          <p className="hidden truncate text-[11px] text-[var(--ink-muted)] lg:block">
             ระบบจัดการสมาชิก
           </p>
         </div>
@@ -80,6 +81,7 @@ export function AppHeader() {
           <span className="sm:hidden">ออก</span>
           <span className="hidden sm:inline">ออกจากระบบ</span>
         </Button>
+      </div>
       </div>
 
       <ConfirmModal

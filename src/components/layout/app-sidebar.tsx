@@ -54,7 +54,7 @@ export function AppSidebar() {
       <button
         type="button"
         aria-label="ปิดเมนู"
-        className={`fixed inset-0 z-40 bg-[color-mix(in_oklab,#000_60%,transparent)] backdrop-blur-[2px] transition-opacity md:hidden ${
+        className={`fixed inset-0 z-40 bg-[color-mix(in_oklab,#000_60%,transparent)] backdrop-blur-[2px] transition-opacity lg:hidden ${
           mobileOpen
             ? "pointer-events-auto opacity-100"
             : "pointer-events-none opacity-0"
@@ -65,7 +65,7 @@ export function AppSidebar() {
       <aside
         data-mobile-open={mobileOpen ? "true" : "false"}
         data-expanded={desktopExpanded ? "true" : "false"}
-        className="fixed inset-y-0 left-0 z-50 flex w-60 -translate-x-full flex-col border-r border-[var(--line)] bg-[var(--sidebar)] transition-[transform,width] duration-300 ease-out data-[mobile-open=true]:translate-x-0 md:sticky md:top-0 md:z-auto md:h-svh md:w-60 md:translate-x-0 md:data-[expanded=false]:w-[4.25rem]"
+        className="fixed inset-y-0 left-0 z-50 flex w-60 -translate-x-full flex-col border-r border-[var(--line)] bg-[var(--sidebar)] pt-[env(safe-area-inset-top)] transition-[transform,width] duration-300 ease-out data-[mobile-open=true]:translate-x-0 lg:sticky lg:top-0 lg:z-auto lg:h-svh lg:w-60 lg:translate-x-0 lg:pt-0 lg:data-[expanded=false]:w-[4.25rem]"
       >
         <div className="flex h-14 shrink-0 items-center border-b border-[var(--line)] px-4">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] font-[family-name:var(--font-display)] text-sm font-bold text-[var(--ink)] shadow-[0_0_20px_var(--glow)]">

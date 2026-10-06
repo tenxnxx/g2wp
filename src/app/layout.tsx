@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Kanit, Noto_Sans_Thai } from "next/font/google";
 import { AppProviders } from "@/context/app-providers";
 import "./globals.css";
@@ -15,10 +15,22 @@ const body = Noto_Sans_Thai({
   weight: ["400", "500", "600", "700"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0a0908",
+};
+
 export const metadata: Metadata = {
   title: "G2WP",
   description: "ระบบจัดการสมาชิก WarZTH — Zombie Survival Portal",
   applicationName: "Member G2WP",
+  appleWebApp: {
+    capable: true,
+    title: "G2WP",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

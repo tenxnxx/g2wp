@@ -74,7 +74,7 @@ export function Modal({
   if (!open || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-6">
       <button
         type="button"
         aria-label="ปิด"
@@ -92,7 +92,7 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow-panel)] outline-none animate-[modalIn_220ms_cubic-bezier(0.22,1,0.36,1)]"
+        className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-[var(--line)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-panel)] outline-none animate-[modalIn_220ms_cubic-bezier(0.22,1,0.36,1)] sm:rounded-3xl sm:pb-0"
       >
         <div className="relative overflow-hidden border-b border-[var(--line)] px-6 pb-5 pt-6">
           <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--accent),var(--warning))]" />
@@ -117,7 +117,7 @@ export function Modal({
               type="button"
               onClick={onClose}
               disabled={closeDisabled}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)] disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)] disabled:pointer-events-none disabled:opacity-40"
               aria-label="ปิดหน้าต่าง"
             >
               <span className="text-lg leading-none">×</span>

@@ -8,7 +8,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <AppSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader />
-        <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-6 md:px-8">
+        <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:px-8 lg:py-6">
           {children}
         </main>
       </div>

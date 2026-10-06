@@ -73,6 +73,81 @@ function EmptySlot({ onClick, editable }: { onClick: () => void; editable: boole
   );
 }
 
+function MoveMenu({
+  playerName,
+  teams,
+  here,
+  onMove,
+}: {
+  playerName: string;
+  teams: { id: string; name: string }[];
+  here?: { teamId?: string; slotType: TeamSlotType };
+  onMove: (slotType: TeamSlotType, teamId?: string) => void;
+}) {
+  return (
+    <details className="relative">
+      <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-lg text-lg text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] [&::-webkit-details-marker]:hidden">
+        <span aria-hidden>⋮</span>
+        <span className="sr-only">ย้าย {playerName}</span>
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 max-h-72 w-52 overflow-auto rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-1 shadow-lg">
+        {here?.slotType === "waiting" ? null : (
+          <button
+            type="button"
+            className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm hover:bg-[var(--surface-hover)]"
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              onMove("waiting");
+            }}
+          >
+            รอเล่น
+          </button>
+        )}
+        {teams.map((team) => (
+          <span key={team.id} className="block">
+            {here?.teamId === team.id && here.slotType === "main" ? null : (
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm hover:bg-[var(--surface-hover)]"
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  onMove("main", team.id);
+                }}
+              >
+                {team.name} · หลัก
+              </button>
+            )}
+            {here?.teamId === team.id && here.slotType === "reserve" ? null : (
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm hover:bg-[var(--surface-hover)]"
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  onMove("reserve", team.id);
+                }}
+              >
+                {team.name} · สำรอง
+              </button>
+            )}
+          </span>
+        ))}
+        {here?.slotType === "inactive" ? null : (
+          <button
+            type="button"
+            className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              onMove("inactive");
+            }}
+          >
+            ไม่เล่นแล้ว
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function PlayerFace({ name, mine }: { name: string; mine: boolean }) {
   return (
     <span
@@ -92,12 +167,14 @@ function PlayerChip({
   crowned = false,
   trailing,
   editable,
+  allowDrag = true,
   onSwap,
 }: {
   player: BoardPlayer;
   crowned?: boolean;
   trailing?: ReactNode;
   editable: boolean;
+  allowDrag?: boolean;
   onSwap: (sourceId: string, targetId: string) => void;
 }) {
   const [over, setOver] = useState(false);
@@ -105,7 +182,7 @@ function PlayerChip({
   return (
     <div
       title={mine ? "ตัวละครของคุณ" : undefined}
-      draggable={editable}
+      draggable={editable && allowDrag}
       onDragStart={
         editable
           ? (event) => {
@@ -148,8 +225,8 @@ function PlayerChip({
             }
           : undefined
       }
-      className={`flex min-w-0 items-center gap-2 rounded-xl border px-2 py-1.5 ${
-        editable ? "cursor-grab active:cursor-grabbing" : ""
+      className={`flex min-w-0 items-center gap-2 rounded-xl border px-2 py-2 ${
+        editable && allowDrag ? "cursor-grab active:cursor-grabbing" : ""
       } ${
         over && editable
           ? "border-[var(--accent-strong)] bg-[var(--surface-hover)]"
@@ -217,6 +294,8 @@ export function TeamsPageClient() {
   const [editMainLimit, setEditMainLimit] = useState("5");
   const [editReserveLimit, setEditReserveLimit] = useState("3");
   const [dragOverTeamId, setDragOverTeamId] = useState<string | null>(null);
+  const [pane, setPane] = useState<"waiting" | "main" | "reserve" | "inactive">("main");
+  const [compact, setCompact] = useState(false);
   const pendingRef = useRef(false);
   const draggingRef = useRef(false);
 
@@ -240,6 +319,14 @@ export function TeamsPageClient() {
       setPending(false);
     }
   }
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1023px)");
+    const sync = () => setCompact(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     const onStart = () => {
@@ -314,6 +401,17 @@ export function TeamsPageClient() {
     void run(() => teamsService.reorder(ids));
   }
 
+  function moveTeam(teamId: string, direction: -1 | 1) {
+    if (!canEdit || !board || pending) return;
+    const ids = board.teams.map((team) => team.id);
+    const from = ids.indexOf(teamId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    void run(() => teamsService.reorder(ids));
+  }
+
   function onDrop(event: DragEvent, slotType: TeamSlotType, teamId?: string) {
     if (!canEdit) return;
     if (isTeamDrag(event)) {
@@ -323,6 +421,15 @@ export function TeamsPageClient() {
     event.preventDefault();
     const assignmentId = event.dataTransfer.getData("text/plain");
     if (!assignmentId || pending) return;
+    if (slotType === "main" || slotType === "reserve") {
+      if (!teamId) return;
+      void run(() => teamsService.move({ assignmentId, slotType, teamId }));
+      return;
+    }
+    void run(() => teamsService.move({ assignmentId, slotType }));
+  }
+
+  function movePlayer(assignmentId: string, slotType: TeamSlotType, teamId?: string) {
     if (slotType === "main" || slotType === "reserve") {
       if (!teamId) return;
       void run(() => teamsService.move({ assignmentId, slotType, teamId }));
@@ -359,30 +466,48 @@ export function TeamsPageClient() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight sm:text-2xl">
             จัดทีม
           </h1>
-          <p className="text-sm text-[var(--ink-muted)]">
-            {board?.session.title ?? "จัดผู้เล่นเข้าทีมหลัก สำรอง หรือพัก"}
+          <p className="truncate text-sm text-[var(--ink-muted)]">
+            {board?.session.title ?? "จัดผู้เล่นเข้าทีม"}
             {board ? ` · ${STATUS_LABEL[board.session.status]}` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 gap-2">
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-11 px-3"
+              disabled={pending || !board}
+              onClick={() => {
+                setTeamName("");
+                setAddMainLimit(String(MAIN_SLOT_LIMIT));
+                setAddReserveLimit(String(RESERVE_SLOT_LIMIT));
+                setAddOpen(true);
+              }}
+            >
+              เพิ่มทีม
+            </Button>
+          ) : null}
           {canEdit && board?.session.status === "draft" ? (
             <Button
               type="button"
+              className="h-11 px-3"
               disabled={pending}
               onClick={() => void run(() => teamsService.start(), "เริ่มรอบนี้แล้ว")}
             >
-              เริ่มรอบนี้
+              เริ่มรอบ
             </Button>
           ) : null}
           {canEdit && board?.session.status === "active" ? (
             <Button
               type="button"
               variant="secondary"
+              className="h-11 px-3"
               disabled={pending}
               onClick={() => void run(() => teamsService.complete(), "จบรอบแล้ว เปิดรอบใหม่")}
             >
@@ -404,8 +529,41 @@ export function TeamsPageClient() {
         </div>
       ) : (
         <>
+          <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--canvas)_92%,transparent)] px-4 py-2 backdrop-blur-md lg:hidden">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-[var(--surface-raised)] p-1">
+              {(
+                [
+                  ["waiting", "รอเล่น", board.waiting.length],
+                  ["main", "ทีม", board.teams.reduce((sum, team) => sum + team.main.length, 0)],
+                  [
+                    "reserve",
+                    "สำรอง",
+                    board.teams.reduce((sum, team) => sum + team.reserve.length, 0),
+                  ],
+                  ["inactive", "ไม่เล่น", board.inactive.length],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={pane === id}
+                  onClick={() => setPane(id)}
+                  className={`flex h-11 flex-col items-center justify-center rounded-lg text-sm font-semibold leading-tight ${
+                    pane === id
+                      ? "bg-[var(--surface)] text-[var(--ink)]"
+                      : "text-[var(--ink-muted)]"
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className="text-xs tabular-nums">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <section
-            className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)] p-4"
+            className={`rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)] p-4 ${
+              pane === "waiting" ? "" : "max-lg:hidden"
+            }`}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => onDrop(event, "waiting")}
           >
@@ -414,7 +572,7 @@ export function TeamsPageClient() {
                 <h2 className="text-sm font-semibold">
                   ผู้เล่นรอเล่น ({board.waiting.length} คน)
                 </h2>
-                <p className="text-xs text-[var(--ink-muted)]">
+                <p className="hidden text-xs text-[var(--ink-muted)] lg:block">
                   {canEdit
                     ? "ลากไปวางที่ช่องว่าง หรือวางทับผู้เล่นเพื่อสลับทีม"
                     : "ดูการจัดทีมอย่างเดียว"}
@@ -425,26 +583,15 @@ export function TeamsPageClient() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="ค้นหาผู้เล่น..."
-                  className="h-10 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 text-sm outline-none"
+                  aria-label="ค้นหาผู้เล่น"
+                  className="h-11 w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 text-sm outline-none lg:w-56"
                 />
                 {canEdit ? (
                   <>
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={pending}
-                      onClick={() => {
-                        setTeamName("");
-                        setAddMainLimit(String(MAIN_SLOT_LIMIT));
-                        setAddReserveLimit(String(RESERVE_SLOT_LIMIT));
-                        setAddOpen(true);
-                      }}
-                    >
-                      เพิ่มทีม
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
+                      className="h-11"
                       disabled={
                         pending ||
                         board.teams.every(
@@ -462,84 +609,38 @@ export function TeamsPageClient() {
                     </Button>
                     <Button
                       type="button"
+                      className="h-11"
                       disabled={pending || board.waiting.length === 0}
                       onClick={() =>
                         void run(() => teamsService.fill(), "จัดผู้เล่นรอเล่นเข้าทีมแล้ว")
                       }
                     >
-                      + เพิ่มทั้งหมด
+                      เพิ่มทั้งหมด
                     </Button>
                   </>
                 ) : null}
               </div>
             </div>
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+            <div className="mt-4 grid gap-2 lg:flex lg:overflow-x-auto lg:pb-1">
               {waiting.length === 0 ? (
                 <p className="text-sm text-[var(--ink-muted)]">ไม่มีผู้เล่นรอเล่น</p>
               ) : (
                 waiting.map((player) => (
-                  <div key={player.assignmentId} className="w-56 shrink-0">
+                  <div key={player.assignmentId} className="min-w-0 lg:w-56 lg:shrink-0">
                     <PlayerChip
                       player={player}
                       editable={canEdit}
+                      allowDrag={!compact}
                       onSwap={swapPlayers}
                       trailing={
-                        <details className="relative">
-                          <summary className="grid size-8 cursor-pointer list-none place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] [&::-webkit-details-marker]:hidden">
-                            <span aria-hidden>⋮</span>
-                            <span className="sr-only">เมนู {player.name}</span>
-                          </summary>
-                          <div className="absolute right-0 z-20 mt-1 max-h-64 w-44 overflow-auto rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-1 shadow-lg">
-                            {board.teams.map((team) => (
-                              <span key={team.id} className="block">
-                                <button
-                                  type="button"
-                                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--surface-hover)]"
-                                  onClick={() =>
-                                    void run(() =>
-                                      teamsService.move({
-                                        assignmentId: player.assignmentId,
-                                        slotType: "main",
-                                        teamId: team.id,
-                                      }),
-                                    )
-                                  }
-                                >
-                                  {team.name} · หลัก
-                                </button>
-                                <button
-                                  type="button"
-                                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--surface-hover)]"
-                                  onClick={() =>
-                                    void run(() =>
-                                      teamsService.move({
-                                        assignmentId: player.assignmentId,
-                                        slotType: "reserve",
-                                        teamId: team.id,
-                                      }),
-                                    )
-                                  }
-                                >
-                                  {team.name} · สำรอง
-                                </button>
-                              </span>
-                            ))}
-                            <button
-                              type="button"
-                              className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--danger)] hover:bg-[var(--surface-hover)]"
-                              onClick={() =>
-                                void run(() =>
-                                  teamsService.move({
-                                    assignmentId: player.assignmentId,
-                                    slotType: "inactive",
-                                  }),
-                                )
-                              }
-                            >
-                              ไม่เล่นแล้ว
-                            </button>
-                          </div>
-                        </details>
+                        <MoveMenu
+                          playerName={player.name}
+                          teams={board.teams}
+                          here={{ slotType: "waiting" }}
+                          onMove={(slotType, teamId) =>
+                            movePlayer(player.assignmentId, slotType, teamId)
+                          }
+                        />
                       }
                     />
                   </div>
@@ -548,8 +649,12 @@ export function TeamsPageClient() {
             </div>
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            {board.teams.map((team) => (
+          <div
+            className={`grid gap-4 lg:grid-cols-2 xl:grid-cols-3 ${
+              pane === "main" ? "" : "max-lg:hidden"
+            }`}
+          >
+            {board.teams.map((team, teamIndex) => (
               <article
                 key={team.id}
                 className={`rounded-2xl border bg-[var(--surface-raised)] p-4 ${
@@ -568,13 +673,13 @@ export function TeamsPageClient() {
               >
                 <header className="mb-3 flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1">
-                    {canEdit ? (
+                    {canEdit && !compact ? (
                       <button
                         type="button"
                         draggable={!pending}
                         aria-label={`ย้ายตำแหน่ง ${team.name}`}
                         title="ลากเพื่อย้ายกล่องทีม"
-                        className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
+                        className="grid size-11 shrink-0 cursor-grab place-items-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
                         onDragStart={(event) => {
                           event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
                           event.dataTransfer.effectAllowed = "move";
@@ -584,13 +689,35 @@ export function TeamsPageClient() {
                         ⠿
                       </button>
                     ) : null}
-                    <h2 className="min-w-0 truncate text-sm font-semibold">{team.name}</h2>
+                    {canEdit && compact ? (
+                      <span className="flex shrink-0">
+                        <button
+                          type="button"
+                          className="grid size-11 place-items-center rounded-lg text-[var(--ink)] disabled:opacity-30"
+                          aria-label={`เลื่อน ${team.name} ขึ้น`}
+                          disabled={pending || teamIndex === 0}
+                          onClick={() => moveTeam(team.id, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="grid size-11 place-items-center rounded-lg text-[var(--ink)] disabled:opacity-30"
+                          aria-label={`เลื่อน ${team.name} ลง`}
+                          disabled={pending || teamIndex === board.teams.length - 1}
+                          onClick={() => moveTeam(team.id, 1)}
+                        >
+                          ↓
+                        </button>
+                      </span>
+                    ) : null}
+                    <h2 className="min-w-0 truncate text-base font-semibold">{team.name}</h2>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs text-[var(--accent-strong)]">
                     {canEdit ? (
                       <button
                         type="button"
-                        className="rounded-md px-2 py-1 text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
+                        className="grid h-11 place-items-center rounded-lg px-3 text-sm text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
                         aria-label={`แก้ไข ${team.name}`}
                         onClick={() => {
                           setEditTeam({ id: team.id, name: team.name });
@@ -606,7 +733,7 @@ export function TeamsPageClient() {
                     {canEdit ? (
                       <button
                         type="button"
-                        className="grid size-8 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                        className="grid size-11 place-items-center rounded-lg text-[var(--danger)] hover:bg-[var(--surface-hover)]"
                         aria-label={`ซ่อน ${team.name}`}
                         onClick={() => setRemoveId(team.id)}
                       >
@@ -626,23 +753,34 @@ export function TeamsPageClient() {
                       player={player}
                       crowned={index === 0}
                       editable={canEdit}
+                      allowDrag={!compact}
                       onSwap={swapPlayers}
                       trailing={
-                        <button
-                          type="button"
-                          className="grid size-8 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--surface-hover)]"
-                          aria-label={`เอา ${player.name} ออกจากทีม`}
-                          onClick={() =>
-                            void run(() =>
-                              teamsService.move({
-                                assignmentId: player.assignmentId,
-                                slotType: "waiting",
-                              }),
-                            )
-                          }
-                        >
-                          ×
-                        </button>
+                        <>
+                          <MoveMenu
+                            playerName={player.name}
+                            teams={board.teams}
+                            here={{ teamId: team.id, slotType: "main" }}
+                            onMove={(slotType, teamId) =>
+                              movePlayer(player.assignmentId, slotType, teamId)
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="grid size-11 place-items-center rounded-lg text-lg text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                            aria-label={`เอา ${player.name} ออกจากทีม`}
+                            onClick={() =>
+                              void run(() =>
+                                teamsService.move({
+                                  assignmentId: player.assignmentId,
+                                  slotType: "waiting",
+                                }),
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </>
                       }
                     />
                   ))}
@@ -660,8 +798,12 @@ export function TeamsPageClient() {
             ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            {board.teams.map((team) => (
+          <div
+            className={`grid gap-4 lg:grid-cols-2 xl:grid-cols-3 ${
+              pane === "reserve" ? "" : "max-lg:hidden"
+            }`}
+          >
+            {board.teams.map((team, teamIndex) => (
               <article
                 key={`reserve-${team.id}`}
                 className={`rounded-2xl border bg-[var(--surface)] p-4 ${
@@ -680,13 +822,13 @@ export function TeamsPageClient() {
               >
                 <header className="mb-3 flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1">
-                    {canEdit ? (
+                    {canEdit && !compact ? (
                       <button
                         type="button"
                         draggable={!pending}
                         aria-label={`ย้ายตำแหน่งสำรอง ${team.name}`}
                         title="ลากเพื่อย้ายกล่องทีม"
-                        className="grid size-8 shrink-0 cursor-grab place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
+                        className="grid size-11 shrink-0 cursor-grab place-items-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-hover)] active:cursor-grabbing"
                         onDragStart={(event) => {
                           event.dataTransfer.setData(TEAM_DRAG_TYPE, team.id);
                           event.dataTransfer.effectAllowed = "move";
@@ -696,7 +838,29 @@ export function TeamsPageClient() {
                         ⠿
                       </button>
                     ) : null}
-                    <h2 className="min-w-0 truncate text-sm font-semibold">สำรอง{team.name}</h2>
+                    {canEdit && compact ? (
+                      <span className="flex shrink-0">
+                        <button
+                          type="button"
+                          className="grid size-11 place-items-center rounded-lg text-[var(--ink)] disabled:opacity-30"
+                          aria-label={`เลื่อนสำรอง ${team.name} ขึ้น`}
+                          disabled={pending || teamIndex === 0}
+                          onClick={() => moveTeam(team.id, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="grid size-11 place-items-center rounded-lg text-[var(--ink)] disabled:opacity-30"
+                          aria-label={`เลื่อนสำรอง ${team.name} ลง`}
+                          disabled={pending || teamIndex === board.teams.length - 1}
+                          onClick={() => moveTeam(team.id, 1)}
+                        >
+                          ↓
+                        </button>
+                      </span>
+                    ) : null}
+                    <h2 className="min-w-0 truncate text-base font-semibold">สำรอง{team.name}</h2>
                   </span>
                   <span className="text-xs text-[var(--accent-strong)]">
                     {team.reserve.length} / {team.reserveLimit}
@@ -712,23 +876,34 @@ export function TeamsPageClient() {
                       key={player.assignmentId}
                       player={player}
                       editable={canEdit}
+                      allowDrag={!compact}
                       onSwap={swapPlayers}
                       trailing={
-                        <button
-                          type="button"
-                          className="grid size-8 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--surface-hover)]"
-                          aria-label={`เอา ${player.name} ออกจากสำรอง`}
-                          onClick={() =>
-                            void run(() =>
-                              teamsService.move({
-                                assignmentId: player.assignmentId,
-                                slotType: "waiting",
-                              }),
-                            )
-                          }
-                        >
-                          ×
-                        </button>
+                        <>
+                          <MoveMenu
+                            playerName={player.name}
+                            teams={board.teams}
+                            here={{ teamId: team.id, slotType: "reserve" }}
+                            onMove={(slotType, teamId) =>
+                              movePlayer(player.assignmentId, slotType, teamId)
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="grid size-11 place-items-center rounded-lg text-lg text-[var(--danger)] hover:bg-[var(--surface-hover)]"
+                            aria-label={`เอา ${player.name} ออกจากสำรอง`}
+                            onClick={() =>
+                              void run(() =>
+                                teamsService.move({
+                                  assignmentId: player.assignmentId,
+                                  slotType: "waiting",
+                                }),
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </>
                       }
                     />
                   ))}
@@ -754,16 +929,18 @@ export function TeamsPageClient() {
           </div>
 
           <section
-            className="rounded-2xl border border-[color-mix(in_oklab,var(--danger)_35%,var(--line))] bg-[var(--surface-raised)] p-4"
+            className={`rounded-2xl border border-[color-mix(in_oklab,var(--danger)_35%,var(--line))] bg-[var(--surface-raised)] p-4 ${
+              pane === "inactive" ? "" : "max-lg:hidden"
+            }`}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => onDrop(event, "inactive")}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-sm font-semibold">
+                <h2 className="text-base font-semibold">
                   ผู้เล่นที่ไม่เล่นแล้ว ({board.inactive.length} คน)
                 </h2>
-                <p className="text-xs text-[var(--ink-muted)]">
+                <p className="hidden text-xs text-[var(--ink-muted)] lg:block">
                   {canEdit ? "ลากมาวางที่นี่เพื่อพักจากรอบนี้" : "ผู้เล่นที่พักจากรอบนี้"}
                 </p>
               </div>
@@ -771,6 +948,7 @@ export function TeamsPageClient() {
                 <Button
                   type="button"
                   variant="danger"
+                  className="h-11"
                   disabled={pending || board.inactive.length === 0}
                   onClick={() =>
                     void run(() => teamsService.clearInactive(), "ย้ายกลับไปรอเล่นแล้ว")
@@ -780,29 +958,23 @@ export function TeamsPageClient() {
                 </Button>
               ) : null}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 grid gap-2 lg:flex lg:flex-wrap">
               {board.inactive.map((player) => (
-                <div key={player.assignmentId} className="w-56">
+                <div key={player.assignmentId} className="min-w-0 lg:w-56">
                   <PlayerChip
                     player={player}
                     editable={canEdit}
+                    allowDrag={!compact}
                     onSwap={swapPlayers}
                     trailing={
-                      <button
-                        type="button"
-                        className="grid size-8 place-items-center rounded-md text-[var(--ink-muted)] hover:bg-[var(--surface-hover)]"
-                        aria-label={`ย้าย ${player.name} กลับไปรอเล่น`}
-                        onClick={() =>
-                          void run(() =>
-                            teamsService.move({
-                              assignmentId: player.assignmentId,
-                              slotType: "waiting",
-                            }),
-                          )
+                      <MoveMenu
+                        playerName={player.name}
+                        teams={board.teams}
+                        here={{ slotType: "inactive" }}
+                        onMove={(slotType, teamId) =>
+                          movePlayer(player.assignmentId, slotType, teamId)
                         }
-                      >
-                        ↩
-                      </button>
+                      />
                     }
                   />
                 </div>
