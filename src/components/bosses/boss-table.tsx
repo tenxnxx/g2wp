@@ -10,6 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { compareServerName } from "@/lib/servers";
 import {
   BOSS_BOX_STATUS,
   bossElapsedMs,
@@ -134,6 +135,7 @@ export function BossTable({ onEdit }: BossTableProps) {
   const [dropTone, setDropTone] = useState<BossTimeGroup | null>(null);
   const [phoneLane, setPhoneLane] = useState<BossTimeGroup>("upcoming");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const wide = useWideBoard();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -180,16 +182,18 @@ export function BossTable({ onEdit }: BossTableProps) {
     ],
     [citiesQuery.data?.data],
   );
-  const serverOptions = useMemo(
-    () => [
+  const serverOptions = useMemo(() => {
+    const rows = [...(serversQuery.data?.data ?? EMPTY_ARRAY)].toSorted((a, b) =>
+      compareServerName(a.serverName, b.serverName),
+    );
+    return [
       { value: "", label: "ทุกเซิร์ฟเวอร์" },
-      ...(serversQuery.data?.data ?? EMPTY_ARRAY).map((row) => ({
+      ...rows.map((row) => ({
         value: row.id,
         label: row.serverName,
       })),
-    ],
-    [serversQuery.data?.data],
-  );
+    ];
+  }, [serversQuery.data?.data]);
   const typeOptions = useMemo(
     () => [
       { value: "", label: "ทุกประเภท" },
@@ -461,7 +465,10 @@ export function BossTable({ onEdit }: BossTableProps) {
         />
       ) : (
         <>
-          <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_92%,transparent)] px-3 py-2 backdrop-blur-md lg:hidden">
+          {wide === null ? <div className="min-h-36" aria-hidden /> : null}
+          {wide === false ? (
+          <>
+          <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_92%,transparent)] px-3 py-2 backdrop-blur-md">
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-raised)] p-1">
               {(
                 [
@@ -487,7 +494,7 @@ export function BossTable({ onEdit }: BossTableProps) {
               ))}
             </div>
           </div>
-          <div className="p-3 lg:hidden">
+          <div className="p-3">
             <BossTimeTable
               title={
                 phoneLane === "over"
@@ -523,7 +530,10 @@ export function BossTable({ onEdit }: BossTableProps) {
               deletePending={deleteMutation.isPending}
             />
           </div>
-          <div className="hidden gap-4 p-4 lg:grid lg:grid-cols-3">
+          </>
+          ) : null}
+          {wide === true ? (
+          <div className="grid grid-cols-3 gap-4 p-4">
           <BossTimeTable
             title={bossWindowCopy.overTitle}
             count={overdue.length}
@@ -582,6 +592,7 @@ export function BossTable({ onEdit }: BossTableProps) {
             deletePending={deleteMutation.isPending}
           />
           </div>
+          ) : null}
         </>
       )}
 
@@ -603,6 +614,20 @@ export function BossTable({ onEdit }: BossTableProps) {
       />
     </div>
   );
+}
+
+function useWideBoard() {
+  const [wide, setWide] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setWide(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  return wide;
 }
 
 function BossTimeTable({

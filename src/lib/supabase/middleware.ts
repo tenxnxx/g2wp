@@ -6,7 +6,7 @@ import { peekAppAccess } from "@/lib/app-users";
 import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
 import { safeNextPath } from "@/lib/safe-next-path";
 
-const USER_PAGE = "/teams";
+const USER_PAGE = "/bosses";
 const USER_PAGES = new Set(["/teams", "/bosses"]);
 
 function normalUserMayOpenPage(pathname: string): boolean {

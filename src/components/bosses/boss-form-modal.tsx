@@ -12,6 +12,7 @@ import { useToast } from "@/context/toast-context";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { bossesService } from "@/services/bosses.service";
 import { citiesService } from "@/services/cities.service";
+import { compareServerName } from "@/lib/servers";
 import { serversService } from "@/services/servers.service";
 import { typeServersService } from "@/services/type-servers.service";
 import type { Boss } from "@/types/boss";
@@ -102,11 +103,12 @@ export function BossFormModal({
         label: row.serverName,
       }));
     if (item && !options.some((option) => option.value === item.serverId)) {
-      options.unshift({
+      options.push({
         value: item.serverId,
         label: `${item.serverName} (ปิดใช้งาน)`,
       });
     }
+    options.sort((a, b) => compareServerName(a.label, b.label));
     return options;
   }, [serverRows, item, takenServerIds]);
 

@@ -10,7 +10,7 @@ import {
   parsePaginationParams,
   parseSearchQuery,
 } from "@/lib/pagination";
-import { serializeServer } from "@/lib/servers";
+import { compareServerName, serializeServer } from "@/lib/servers";
 import type { Prisma } from "@/generated/prisma/client";
 
 function parseIsUse(searchParams: URLSearchParams): boolean | undefined {
@@ -47,14 +47,15 @@ export async function GET(request: Request) {
           prisma.server.count({ where }),
           prisma.server.findMany({
             where,
-            orderBy: [{ isUse: "desc" }, { serverName: "asc" }],
-            skip,
-            take: limit,
             include: { _count: { select: { bosses: true } } },
           }),
         ]);
+        rows.sort((a, b) => {
+          if (a.isUse !== b.isUse) return a.isUse ? -1 : 1;
+          return compareServerName(a.serverName, b.serverName);
+        });
         return {
-          data: rows.map(serializeServer),
+          data: rows.slice(skip, skip + limit).map(serializeServer),
           meta: buildPaginationMeta(total, page, limit),
         };
       },

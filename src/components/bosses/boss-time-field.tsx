@@ -108,7 +108,7 @@ export function BossTimeField({
   return (
     <fieldset className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-center">
       <legend className="mx-auto w-fit px-1 text-center text-sm font-medium text-[var(--ink)]">
-        เวลา *
+        เวลาบอสตาย *
       </legend>
       <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums tracking-tight text-[var(--ink)]">
         {formatBossTime(hour, minute)}

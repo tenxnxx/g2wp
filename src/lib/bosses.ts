@@ -20,27 +20,16 @@ export function formatBossTime(hour: number, minute: number, second?: number): s
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
-const TEN_SECONDS_MS = 10 * 1000;
-const THIRTY_SECONDS_MS = 30 * 1000;
 
-/** "trial" counts down for 10 seconds, stays finished for 30, then moves to ไม่พบบอส. Set this back to "hour" to restore 1 hour. */
-const BOSS_WINDOW_MODE = "trial" as "trial" | "hour";
+/** รอเกิด is the hour before the clock. เกิดแล้ว lasts one hour, then the card moves to ไม่พบบอส. */
+const BOSS_WINDOW_MS = ONE_HOUR_MS;
+const FINISHED_HOLD_MS = ONE_HOUR_MS;
 
-const BOSS_WINDOW_MS = BOSS_WINDOW_MODE === "trial" ? TEN_SECONDS_MS : ONE_HOUR_MS;
-const FINISHED_HOLD_MS = BOSS_WINDOW_MODE === "trial" ? THIRTY_SECONDS_MS : null;
-
-export const bossWindowCopy =
-  BOSS_WINDOW_MODE === "trial"
-    ? {
-        overTitle: "ไม่พบบอส",
-        freshTitle: "รอเกิด",
-        upcomingTitle: "เกิดแล้ว",
-      }
-    : {
-        overTitle: "ไม่พบบอส",
-        freshTitle: "รอเกิด",
-        upcomingTitle: "เกิดแล้ว",
-      };
+export const bossWindowCopy = {
+  overTitle: "ไม่พบบอส",
+  freshTitle: "รอเกิด",
+  upcomingTitle: "เกิดแล้ว",
+};
 
 /** Clock time on today's local date, so a stored 13:03 means today at 13:03. */
 export function bossSelectedAt(
@@ -74,17 +63,11 @@ export function clockForGroup(
   now = Date.now(),
 ): { hour: number; minute: number; second: number } {
   const offsetMs =
-    BOSS_WINDOW_MODE === "trial"
-      ? group === "fresh"
-        ? 5_000
-        : group === "upcoming"
-          ? -1_000
-          : 20_000
-      : group === "fresh"
-        ? 30 * 60 * 1000
-        : group === "upcoming"
-          ? -60_000
-          : 2 * ONE_HOUR_MS;
+    group === "fresh"
+      ? BOSS_WINDOW_MS - 1000
+      : group === "upcoming"
+        ? -1_000
+        : 2 * ONE_HOUR_MS;
   const target = new Date(now + offsetMs);
   return {
     hour: target.getHours(),
@@ -114,8 +97,8 @@ export function readBoardLane(value: unknown): BossBoardLane | null {
 }
 
 /**
- * Box 2 is the last 10 seconds before the chosen time, then the row moves to box 3.
- * Box 3 lasts 30 seconds, then the row moves to box 1.
+ * Box 2 is the hour before the chosen time, then the row moves to box 3.
+ * Box 3 lasts one hour, then the row moves to box 1.
  * Wait and ready recapture the clock. ไม่พบบอส clears it.
  * A card in box 1 stays there until someone moves it.
  * A wait pin whose time has arrived always reads as ready, so the
@@ -140,7 +123,7 @@ export function bossTimeGroup(
     { hour: boss.hour, minute: boss.minute, second: boss.second },
     now,
   );
-  const holdExpired = FINISHED_HOLD_MS !== null && elapsed >= FINISHED_HOLD_MS;
+  const holdExpired = elapsed >= FINISHED_HOLD_MS;
   if (boss.boardLane === "not") return "over";
   if (boss.boardLane === "wait" && elapsed >= 0) return "upcoming";
   if (boss.boardLane === "ready" && holdExpired) return "over";

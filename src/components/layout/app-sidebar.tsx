@@ -7,12 +7,12 @@ import { useIsAdmin } from "@/context/role-context";
 import { useSidebar } from "@/context/sidebar-context";
 
 const MENU = [
+  { href: "/bosses", label: "บอส", hint: "Bosses" },
   { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
   { href: "/dashboard", label: "แดชบอร์ด", hint: "Overview" },
   { href: "/users", label: "ผู้ใช้", hint: "Users" },
   { href: "/members", label: "สมาชิก", hint: "Members" },
   { href: "/groups", label: "กลุ่ม", hint: "Groups" },
-  { href: "/bosses", label: "บอส", hint: "Bosses" },
   { href: "/items", label: "ไอเท็ม", hint: "Items" },
   { href: "/safes", label: "ตู้เซฟ", hint: "Safes" },
   { href: "/players", label: "ตัวละคร", hint: "Players" },
@@ -28,8 +28,8 @@ export function AppSidebar() {
   const menu = isAdmin
     ? MENU
     : [
-        { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
         { href: "/bosses", label: "บอส", hint: "Bosses" },
+        { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
       ];
   const {
     desktopExpanded,

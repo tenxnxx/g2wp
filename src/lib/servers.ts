@@ -1,5 +1,9 @@
 import type { GameServer } from "@/types/server";
 
+export function compareServerName(a: string, b: string) {
+  return a.localeCompare(b, "th", { numeric: true, sensitivity: "base" });
+}
+
 export function serializeServer(row: {
   id: string;
   serverName: string;
