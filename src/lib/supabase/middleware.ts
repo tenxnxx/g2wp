@@ -7,9 +7,35 @@ import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase/env";
 import { safeNextPath } from "@/lib/safe-next-path";
 
 const USER_PAGE = "/teams";
+const USER_PAGES = new Set(["/teams", "/bosses"]);
 
+function normalUserMayOpenPage(pathname: string): boolean {
+  return USER_PAGES.has(pathname);
+}
+
+/** Logged-in users may use the team board (view) and every boss-board action. */
 function normalUserMayCallApi(request: NextRequest): boolean {
-  return request.method === "GET" && request.nextUrl.pathname === "/api/teams/board";
+  const { pathname } = request.nextUrl;
+  const method = request.method;
+  if (method === "GET" && pathname === "/api/teams/board") return true;
+  if (pathname === "/api/bosses" && (method === "GET" || method === "POST")) {
+    return true;
+  }
+  if (
+    /^\/api\/bosses\/[^/]+$/.test(pathname) &&
+    (method === "GET" || method === "PATCH" || method === "DELETE")
+  ) {
+    return true;
+  }
+  if (
+    method === "GET" &&
+    (pathname === "/api/cities" ||
+      pathname === "/api/servers" ||
+      pathname === "/api/type-servers")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export async function updateSession(request: NextRequest) {
@@ -89,12 +115,18 @@ export async function updateSession(request: NextRequest) {
   if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
-    url.pathname = admin ? (next === "/" ? USER_PAGE : next) : USER_PAGE;
+    url.pathname = admin
+      ? next === "/"
+        ? USER_PAGE
+        : next
+      : normalUserMayOpenPage(next)
+        ? next
+        : USER_PAGE;
     url.search = "";
     return NextResponse.redirect(url);
   }
 
-  if (user && !admin && !isPublic && pathname !== USER_PAGE) {
+  if (user && !admin && !isPublic) {
     if (isApi) {
       if (normalUserMayCallApi(request)) return supabaseResponse;
       return NextResponse.json(
@@ -102,10 +134,12 @@ export async function updateSession(request: NextRequest) {
         { status: 403 },
       );
     }
-    const url = request.nextUrl.clone();
-    url.pathname = USER_PAGE;
-    url.search = "";
-    return NextResponse.redirect(url);
+    if (!normalUserMayOpenPage(pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = USER_PAGE;
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

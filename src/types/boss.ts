@@ -37,4 +37,6 @@ export type UpdateBossInput = Partial<
   hour?: number | null;
   minute?: number | null;
   second?: number | null;
+  /** Set only by the automatic wait → ready move. Not stored. */
+  autoReady?: boolean;
 };

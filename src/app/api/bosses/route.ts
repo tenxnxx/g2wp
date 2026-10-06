@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { actorLabel, requireAuth } from "@/lib/api-auth";
+import { actorLabel, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { bossServerConflict } from "@/lib/boss-conflicts";
@@ -64,7 +64,7 @@ async function assertRefs(ids: {
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);
@@ -141,7 +141,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const bodyResult = await readJsonBody(request);

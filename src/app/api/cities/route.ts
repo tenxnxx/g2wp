@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api-auth";
+import { requireAuth, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { prisma } from "@/lib/db";
@@ -22,7 +22,7 @@ function parseIsUse(searchParams: URLSearchParams): boolean | undefined {
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

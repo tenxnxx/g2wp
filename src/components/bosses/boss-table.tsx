@@ -56,6 +56,7 @@ type LaneWrite = {
   hour: number | null;
   minute: number | null;
   second: number | null;
+  autoReady?: boolean;
 };
 
 type PendingMove = LaneWrite & { at: number };
@@ -325,7 +326,15 @@ export function BossTable({ onEdit }: BossTableProps) {
         nextLane === "ready"
           ? clockForGroup("upcoming", Date.now())
           : { hour: null, minute: null, second: null };
-      writeLaneRef.current(item, { boardLane: nextLane, ...captured }, true);
+      writeLaneRef.current(
+        item,
+        {
+          boardLane: nextLane,
+          ...captured,
+          ...(nextLane === "ready" ? { autoReady: true } : {}),
+        },
+        true,
+      );
     }
   }, [draggingId, items, layoutNow, moveEpoch]);
 

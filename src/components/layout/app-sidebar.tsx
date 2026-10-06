@@ -27,7 +27,10 @@ export function AppSidebar() {
   const isAdmin = useIsAdmin();
   const menu = isAdmin
     ? MENU
-    : [{ href: "/teams", label: "จัดทีม", hint: "Team Manager" }];
+    : [
+        { href: "/teams", label: "จัดทีม", hint: "Team Manager" },
+        { href: "/bosses", label: "บอส", hint: "Bosses" },
+      ];
   const {
     desktopExpanded,
     mobileOpen,

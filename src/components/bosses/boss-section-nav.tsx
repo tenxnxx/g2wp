@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useIsAdmin } from "@/context/role-context";
 
 const LINKS = [
   { href: "/bosses", label: "บอส" },
@@ -12,6 +13,8 @@ const LINKS = [
 
 export function BossSectionNav() {
   const pathname = usePathname();
+  const isAdmin = useIsAdmin();
+  if (!isAdmin) return null;
 
   return (
     <nav

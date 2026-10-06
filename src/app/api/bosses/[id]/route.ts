@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
-import { actorLabel, requireAuth } from "@/lib/api-auth";
+import { after, NextResponse } from "next/server";
+import { actorLabel, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { bossServerConflict } from "@/lib/boss-conflicts";
-import { bossInclude, readBoardLane, readClockValue, serializeBoss } from "@/lib/bosses";
+import { bossInclude, formatBossTime, readBoardLane, readClockValue, serializeBoss } from "@/lib/bosses";
 import { prisma } from "@/lib/db";
+import { notifyBossReady } from "@/server/notify";
+import { TYPE_SERVER_LABEL } from "@/types/type-server";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,7 +44,7 @@ async function assertRefs(ids: {
 
 export async function GET(_request: Request, { params }: Params) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const { id } = await params;
@@ -68,7 +70,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const { id } = await params;
@@ -176,7 +178,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const current = await prisma.boss.findUnique({
       where: { id },
-      select: { cityId: true, serverId: true, typeServerId: true },
+      select: { cityId: true, serverId: true, typeServerId: true, boardLane: true },
     });
     if (!current) {
       return NextResponse.json({ error: "ไม่พบบอส" }, { status: 404 });
@@ -199,6 +201,24 @@ export async function PATCH(request: Request, { params }: Params) {
     });
 
     await invalidateResource("bosses");
+    if (
+      body.autoReady === true &&
+      current.boardLane === "wait" &&
+      boss.boardLane === "ready"
+    ) {
+      const clock =
+        boss.hour != null && boss.minute != null
+          ? formatBossTime(boss.hour, boss.minute, boss.second ?? undefined)
+          : null;
+      after(() =>
+        notifyBossReady(id, {
+          cityName: boss.city.cityName,
+          serverName: boss.server.serverName,
+          typeLabel: TYPE_SERVER_LABEL[boss.typeServer.type],
+          clock,
+        }),
+      );
+    }
     return NextResponse.json(serializeBoss(boss));
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update boss");
@@ -207,7 +227,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
 export async function DELETE(_request: Request, { params }: Params) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireUser();
     if (auth.error) return auth.error;
 
     const { id } = await params;
