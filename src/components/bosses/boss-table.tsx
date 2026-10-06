@@ -13,7 +13,6 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import {
   BOSS_BOX_STATUS,
   bossElapsedMs,
-  bossShouldReturnToWait,
   bossTimeGroup,
   clockForGroup,
   bossWindowCopy,
@@ -42,6 +41,50 @@ function boardGroupKey(rows: readonly Boss[], at: number) {
     key += "\n";
   }
   return key;
+}
+
+function cardElapsed(item: Boss, now: number): number {
+  if (item.hour == null || item.minute == null) return 0;
+  return bossElapsedMs(
+    { hour: item.hour, minute: item.minute, second: item.second },
+    now,
+  );
+}
+
+type LaneWrite = {
+  boardLane: BossBoardLane | null;
+  hour: number | null;
+  minute: number | null;
+  second: number | null;
+};
+
+type PendingMove = LaneWrite & { at: number };
+
+const pendingMoves = new Map<string, PendingMove>();
+const quietMoves = new Set<string>();
+const missingBosses = new Set<string>();
+const retryAt = new Map<string, number>();
+const laneInflight = new Map<string, { at: number; request: Promise<Boss> }>();
+
+function sameLaneWrite(a: LaneWrite, b: LaneWrite) {
+  return (
+    a.boardLane === b.boardLane &&
+    a.hour === b.hour &&
+    a.minute === b.minute &&
+    a.second === b.second
+  );
+}
+
+/** A list refetch that started before a save must not roll the card backwards. */
+function shareBossBoard(oldData: unknown, newData: unknown): Boss[] {
+  if (!Array.isArray(newData)) return [];
+  if (!Array.isArray(oldData)) return newData as Boss[];
+  const previous = new Map((oldData as Boss[]).map((row) => [row.id, row]));
+  return (newData as Boss[]).map((row) => {
+    const prior = previous.get(row.id);
+    if (prior && prior.updatedAt > row.updatedAt) return prior;
+    return row;
+  });
 }
 
 function BossElapsed({
@@ -109,6 +152,7 @@ export function BossTable({ onEdit }: BossTableProps) {
         typeServerId: typeServerId || undefined,
       }),
     placeholderData: (previous) => previous,
+    structuralSharing: shareBossBoard,
   });
 
   const citiesQuery = useQuery({
@@ -167,79 +211,114 @@ export function BossTable({ onEdit }: BossTableProps) {
     });
   }, [items]);
 
-  const ordered = [...items].sort(
-    (a, b) => bossElapsedMs(b, layoutNow) - bossElapsedMs(a, layoutNow),
-  );
+  const ordered = [...items].sort((a, b) => cardElapsed(b, layoutNow) - cardElapsed(a, layoutNow));
   const overdue = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "over");
   const recent = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "fresh");
   const upcoming = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "upcoming");
 
   const boardKey = ["bosses", "board", search, cityId, serverId, typeServerId] as const;
-  const returningToWait = useRef(new Set<string>());
-  const quietMove = useRef(new Set<string>());
+  const [moveEpoch, setMoveEpoch] = useState(0);
 
   const laneMutation = useMutation({
-    mutationFn: ({
-      id,
-      boardLane,
-      hour,
-      minute,
-      second,
-    }: {
-      id: string;
-      boardLane: BossBoardLane | null;
-      hour?: number;
-      minute?: number;
-      second?: number;
-    }) => bossesService.update(id, { boardLane, hour, minute, second }),
-    onMutate: async ({ id, boardLane, hour, minute, second }) => {
-      await queryClient.cancelQueries({ queryKey: ["bosses", "board"] });
+    mutationFn: ({ id, ...write }: { id: string } & LaneWrite) => {
+      const key = `${id}|${write.boardLane ?? ""}|${write.hour ?? ""}|${write.minute ?? ""}`;
+      const current = laneInflight.get(key);
+      if (current && Date.now() - current.at < 1500) return current.request;
+      const request = bossesService.update(id, write).finally(() => {
+        const latest = laneInflight.get(key);
+        if (latest?.request === request) laneInflight.delete(key);
+      });
+      laneInflight.set(key, { at: Date.now(), request });
+      return request;
+    },
+    onMutate: ({ id, boardLane, hour, minute, second }) => {
       const previous = queryClient.getQueryData<Boss[]>(boardKey);
       queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
         rows?.map((row) =>
-          row.id === id
-            ? {
-                ...row,
-                boardLane,
-                ...(hour !== undefined ? { hour } : {}),
-                ...(minute !== undefined ? { minute } : {}),
-                ...(second !== undefined ? { second } : {}),
-              }
-            : row,
+          row.id === id ? { ...row, boardLane, hour, minute, second } : row,
         ),
       );
       return { previous };
     },
+    onSuccess: (boss) => {
+      pendingMoves.delete(boss.id);
+      queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
+        rows?.map((row) => (row.id === boss.id ? boss : row)),
+      );
+    },
     onError: (err: Error, vars, context) => {
+      pendingMoves.delete(vars.id);
+      if (err.message === "ไม่พบบอส") {
+        missingBosses.add(vars.id);
+        queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
+          rows?.filter((row) => row.id !== vars.id),
+        );
+        return;
+      }
       if (context?.previous) queryClient.setQueryData(boardKey, context.previous);
-      if (quietMove.current.has(vars.id)) {
-        quietMove.current.delete(vars.id);
+      if (quietMoves.has(vars.id)) {
+        quietMoves.delete(vars.id);
+        retryAt.set(vars.id, Date.now() + 3000);
+        window.setTimeout(() => setMoveEpoch((value) => value + 1), 3000);
         return;
       }
       toast.error("ย้ายการ์ดไม่สำเร็จ", err.message);
     },
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["bosses"] });
-    },
   });
+
+  const writeLaneRef = useRef<
+    (item: Boss, write: LaneWrite, quiet: boolean) => void
+  >(() => {});
+  writeLaneRef.current = (item, write, quiet) => {
+    const current = pendingMoves.get(item.id);
+    if (current && sameLaneWrite(current, write) && Date.now() - current.at < 8000) return;
+    pendingMoves.set(item.id, { ...write, at: Date.now() });
+    if (quiet) quietMoves.add(item.id);
+    else quietMoves.delete(item.id);
+    laneMutation.mutate({ id: item.id, ...write });
+  };
 
   useEffect(() => {
     for (const item of items) {
-      if (draggingId === item.id || returningToWait.current.has(item.id)) continue;
-      if (!bossShouldReturnToWait(item, layoutNow)) continue;
-      returningToWait.current.add(item.id);
-      quietMove.current.add(item.id);
-      const clock = clockForGroup("fresh", layoutNow);
-      laneMutation.mutate(
-        { id: item.id, boardLane: null, ...clock },
-        {
-          onSettled: () => {
-            returningToWait.current.delete(item.id);
-          },
-        },
-      );
+      const pending = pendingMoves.get(item.id);
+      if (
+        draggingId === item.id ||
+        missingBosses.has(item.id) ||
+        (pending && Date.now() - pending.at < 8000)
+      ) {
+        continue;
+      }
+      const cooledUntil = retryAt.get(item.id) ?? 0;
+      if (cooledUntil > Date.now()) continue;
+      const group = bossTimeGroup(item, layoutNow);
+      const elapsed = cardElapsed(item, layoutNow);
+      const nextLane =
+        item.boardLane === "wait" && group === "upcoming"
+          ? "ready"
+          : group === "over" && item.boardLane !== "not" && elapsed >= 0
+            ? "not"
+            : null;
+      if (
+        item.boardLane === "not" &&
+        item.hour != null &&
+        item.minute != null &&
+        elapsed >= 0
+      ) {
+        writeLaneRef.current(
+          item,
+          { boardLane: "not", hour: null, minute: null, second: null },
+          true,
+        );
+        continue;
+      }
+      if (!nextLane) continue;
+      const captured =
+        nextLane === "ready"
+          ? clockForGroup("upcoming", Date.now())
+          : { hour: null, minute: null, second: null };
+      writeLaneRef.current(item, { boardLane: nextLane, ...captured }, true);
     }
-  }, [draggingId, items, laneMutation, layoutNow]);
+  }, [draggingId, items, layoutNow, moveEpoch]);
 
   function placeCard(id: string, tone: BossTimeGroup) {
     const now = Date.now();
@@ -248,14 +327,12 @@ export function BossTable({ onEdit }: BossTableProps) {
     setDraggingId(null);
     setDropTone(null);
     if (!current || bossTimeGroup(current, now) === tone) return;
-    const clock = clockForGroup(tone, now);
-    laneMutation.mutate({ id, boardLane: lane, ...clock });
-  }
-
-  function releaseCard(id: string) {
-    const current = items.find((item) => item.id === id);
-    if (!current?.boardLane) return;
-    laneMutation.mutate({ id, boardLane: null });
+    retryAt.delete(id);
+    const clock =
+      tone === "over"
+        ? { hour: null, minute: null, second: null }
+        : clockForGroup(tone, now);
+    writeLaneRef.current(current, { boardLane: lane, ...clock }, false);
   }
 
   const deleteMutation = useMutation({
@@ -368,16 +445,13 @@ export function BossTable({ onEdit }: BossTableProps) {
         <div className="grid gap-4 p-4 xl:grid-cols-3">
           <BossTimeTable
             title={bossWindowCopy.overTitle}
-            hint={bossWindowCopy.overHint}
             count={overdue.length}
-            status={BOSS_BOX_STATUS.over}
             tone="over"
             items={overdue}
             draggingId={draggingId}
             hot={dropTone === "over"}
             onEdit={onEdit}
             onDelete={setDeleteTarget}
-            onRelease={releaseCard}
             onDragCard={setDraggingId}
             onDragEnd={() => {
               setDraggingId(null);
@@ -389,16 +463,13 @@ export function BossTable({ onEdit }: BossTableProps) {
           />
           <BossTimeTable
             title={bossWindowCopy.freshTitle}
-            hint={bossWindowCopy.freshHint}
             count={recent.length}
-            status={BOSS_BOX_STATUS.fresh}
             tone="fresh"
             items={recent}
             draggingId={draggingId}
             hot={dropTone === "fresh"}
             onEdit={onEdit}
             onDelete={setDeleteTarget}
-            onRelease={releaseCard}
             onDragCard={setDraggingId}
             onDragEnd={() => {
               setDraggingId(null);
@@ -410,16 +481,13 @@ export function BossTable({ onEdit }: BossTableProps) {
           />
           <BossTimeTable
             title={bossWindowCopy.upcomingTitle}
-            hint={bossWindowCopy.upcomingHint}
             count={upcoming.length}
-            status={BOSS_BOX_STATUS.upcoming}
             tone="upcoming"
             items={upcoming}
             draggingId={draggingId}
             hot={dropTone === "upcoming"}
             onEdit={onEdit}
             onDelete={setDeleteTarget}
-            onRelease={releaseCard}
             onDragCard={setDraggingId}
             onDragEnd={() => {
               setDraggingId(null);
@@ -454,16 +522,13 @@ export function BossTable({ onEdit }: BossTableProps) {
 
 function BossTimeTable({
   title,
-  hint,
   count,
-  status,
   tone,
   items,
   draggingId,
   hot,
   onEdit,
   onDelete,
-  onRelease,
   onDragCard,
   onDragEnd,
   onDragOverColumn,
@@ -471,16 +536,13 @@ function BossTimeTable({
   deletePending,
 }: {
   title: string;
-  hint: string;
   count: number;
-  status: BossBoardLane;
   tone: BossTimeGroup;
   items: Boss[];
   draggingId: string | null;
   hot: boolean;
   onEdit: (item: Boss) => void;
   onDelete: (item: Boss) => void;
-  onRelease: (id: string) => void;
   onDragCard: (id: string) => void;
   onDragEnd: () => void;
   onDragOverColumn: () => void;
@@ -520,22 +582,13 @@ function BossTimeTable({
         if (id) onDropCard(id);
       }}
     >
-      <header className={headerClass}>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-[family-name:var(--font-display)] text-base font-semibold">
-            {title}
-          </h3>
-          <span className="rounded-full bg-[var(--surface)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--ink)]">
-            {count}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-[var(--ink-muted)]">{hint}</p>
-        <p className="mt-2 flex items-center gap-2 text-xs">
-          <span className="text-[var(--ink-muted)]">status</span>
-          <span className="rounded-md bg-[var(--surface)] px-2 py-0.5 font-semibold uppercase tracking-wide text-[var(--ink)]">
-            {status}
-          </span>
-        </p>
+      <header className={`relative ${headerClass}`}>
+        <h3 className="text-center font-[family-name:var(--font-display)] text-base font-semibold">
+          {title}
+        </h3>
+        <span className="absolute top-3 right-4 rounded-full bg-[var(--surface)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--ink)]">
+          {count}
+        </span>
       </header>
       <div className="flex max-h-[34rem] min-h-36 flex-col gap-2 overflow-auto p-3">
         {items.length === 0 ? (
@@ -561,40 +614,39 @@ function BossTimeTable({
                 draggingId === item.id ? "opacity-40" : "hover:bg-[var(--surface-hover)]"
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-[var(--ink)]">{item.cityName}</p>
-                  <p className="truncate text-xs text-[var(--ink-muted)]">
-                    {item.serverName} · {TYPE_SERVER_LABEL[item.type]}
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-md bg-[var(--surface-raised)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink)]">
-                  {status}
-                </span>
-              </div>
-              <div className="mt-2">
-                <p className="font-medium tabular-nums text-[var(--ink)]">
-                  {formatBossTime(item.hour, item.minute, item.second)}
+              <div className="min-w-0">
+                <p className="truncate font-[family-name:var(--font-display)] text-lg font-semibold leading-tight tracking-tight text-[var(--ink)]">
+                  {item.cityName}
                 </p>
-                <BossElapsed
-                  hour={item.hour}
-                  minute={item.minute}
-                  second={item.second}
-                  className={elapsedClass}
-                />
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-2">
-                {item.boardLane ? (
-                  <button
-                    type="button"
-                    className="text-xs text-[var(--ink-muted)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
-                    onClick={() => onRelease(item.id)}
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-sm font-semibold text-[var(--ink)]">
+                    {item.serverName}
+                  </p>
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide ${
+                      item.type === "premium"
+                        ? "bg-[color-mix(in_oklab,var(--warning)_24%,var(--surface-raised))] text-[#f3d7a4]"
+                        : "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                    }`}
                   >
-                    ตามเวลา
-                  </button>
-                ) : (
-                  <span className="text-xs text-[var(--ink-muted)]">ลากได้</span>
-                )}
+                    {TYPE_SERVER_LABEL[item.type]}
+                  </span>
+                </div>
+              </div>
+              {item.hour == null || item.minute == null ? null : (
+                <div className="mt-2">
+                  <p className="font-medium tabular-nums text-[var(--ink)]">
+                    {formatBossTime(item.hour, item.minute, item.second ?? 0)}
+                  </p>
+                  <BossElapsed
+                    hour={item.hour}
+                    minute={item.minute}
+                    second={item.second ?? 0}
+                    className={elapsedClass}
+                  />
+                </div>
+              )}
+              <div className="mt-3 flex items-center justify-end gap-2">
                 <div className="flex gap-1.5">
                   <Button
                     type="button"

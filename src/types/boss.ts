@@ -11,9 +11,9 @@ export type Boss = {
   serverName: string;
   typeServerId: string;
   type: TypeServerKind;
-  hour: number;
-  minute: number;
-  second: number;
+  hour: number | null;
+  minute: number | null;
+  second: number | null;
   boardLane: BossBoardLane | null;
   createBy: string;
   updateBy: string | null;
@@ -30,6 +30,11 @@ export type CreateBossInput = {
   second?: number;
 };
 
-export type UpdateBossInput = Partial<CreateBossInput> & {
+export type UpdateBossInput = Partial<
+  Omit<CreateBossInput, "hour" | "minute" | "second">
+> & {
   boardLane?: BossBoardLane | null;
+  hour?: number | null;
+  minute?: number | null;
+  second?: number | null;
 };

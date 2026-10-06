@@ -34,12 +34,19 @@ function startFallback(gen: number) {
   }, 1000);
 }
 
+/** The clock socket listens on port 8001 of this machine. Render does not expose that port. */
+function bossClockSocketUrl(): string | null {
+  const host = window.location.hostname;
+  if (host !== "localhost" && host !== "127.0.0.1") return null;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${host}:${BOSS_CLOCK_PORT}${BOSS_CLOCK_PATH}`;
+}
+
 function connect(gen: number) {
   if (gen !== generation) return;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const next = new WebSocket(
-    `${protocol}//${window.location.hostname}:${BOSS_CLOCK_PORT}${BOSS_CLOCK_PATH}`,
-  );
+  const url = bossClockSocketUrl();
+  if (!url) return;
+  const next = new WebSocket(url);
   socket = next;
   next.onopen = () => {
     if (gen !== generation) return;

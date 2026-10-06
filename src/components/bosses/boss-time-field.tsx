@@ -33,11 +33,11 @@ function ClockPart({
   const choices = [wrap(value - 1, size), value, wrap(value + 1, size)];
 
   return (
-    <div className="space-y-2">
+    <div className="w-full space-y-2 text-center">
       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-muted)]">
         {label}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         {choices.map((choice, index) => {
           const selected = index === 1;
           return (
@@ -67,7 +67,7 @@ function ClockPart({
       </div>
       {customOpen ? (
         <div
-          className="grid max-h-40 grid-cols-6 gap-1.5 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-2 sm:grid-cols-8"
+          className="grid max-h-40 w-full grid-cols-6 gap-1.5 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-center sm:grid-cols-8"
           role="listbox"
           aria-label={`เลือก${label}`}
         >
@@ -106,8 +106,8 @@ export function BossTimeField({
   onMinuteChange,
 }: BossTimeFieldProps) {
   return (
-    <fieldset className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3">
-      <legend className="px-1 text-sm font-medium text-[var(--ink)]">
+    <fieldset className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-center">
+      <legend className="mx-auto w-fit px-1 text-center text-sm font-medium text-[var(--ink)]">
         เวลา *
       </legend>
       <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums tracking-tight text-[var(--ink)]">

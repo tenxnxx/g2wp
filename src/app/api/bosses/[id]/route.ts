@@ -80,9 +80,9 @@ export async function PATCH(request: Request, { params }: Params) {
       cityId?: string;
       serverId?: string;
       typeServerId?: string;
-      hour?: number;
-      minute?: number;
-      second?: number;
+      hour?: number | null;
+      minute?: number | null;
+      second?: number | null;
       boardLane?: string | null;
       updateBy: string;
     } = { updateBy: actorLabel(auth.user) };
@@ -111,28 +111,34 @@ export async function PATCH(request: Request, { params }: Params) {
       }
       data.typeServerId = typeServerId;
     }
-    if (body.hour !== undefined) {
-      const hour = readClockValue(body.hour, 23);
-      if (hour === null) {
-        return NextResponse.json({ error: "เลือกชั่วโมงให้ถูกต้อง" }, { status: 400 });
+    if (body.hour === null || body.minute === null || body.second === null) {
+      data.hour = null;
+      data.minute = null;
+      data.second = null;
+    } else {
+      if (body.hour !== undefined) {
+        const hour = readClockValue(body.hour, 23);
+        if (hour === null) {
+          return NextResponse.json({ error: "เลือกชั่วโมงให้ถูกต้อง" }, { status: 400 });
+        }
+        data.hour = hour;
       }
-      data.hour = hour;
-    }
-    if (body.minute !== undefined) {
-      const minute = readClockValue(body.minute, 59);
-      if (minute === null) {
-        return NextResponse.json({ error: "เลือกนาทีให้ถูกต้อง" }, { status: 400 });
+      if (body.minute !== undefined) {
+        const minute = readClockValue(body.minute, 59);
+        if (minute === null) {
+          return NextResponse.json({ error: "เลือกนาทีให้ถูกต้อง" }, { status: 400 });
+        }
+        data.minute = minute;
       }
-      data.minute = minute;
-    }
-    if (body.second !== undefined) {
-      const second = readClockValue(body.second, 59);
-      if (second === null) {
-        return NextResponse.json({ error: "เลือกวินาทีให้ถูกต้อง" }, { status: 400 });
+      if (body.second !== undefined) {
+        const second = readClockValue(body.second, 59);
+        if (second === null) {
+          return NextResponse.json({ error: "เลือกวินาทีให้ถูกต้อง" }, { status: 400 });
+        }
+        data.second = second;
+      } else if (data.hour !== undefined || data.minute !== undefined) {
+        data.second = 0;
       }
-      data.second = second;
-    } else if (data.hour !== undefined || data.minute !== undefined) {
-      data.second = 0;
     }
     if (body.boardLane !== undefined) {
       if (body.boardLane === null) {

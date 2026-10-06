@@ -270,11 +270,6 @@ export function BossFormModal({
               emptyMessage="ไม่พบเซิร์ฟเวอร์"
             />
           )}
-          {serverOptions.length > 0 ? (
-            <p className="mt-1.5 text-xs text-[var(--ink-muted)]">
-              ในเมืองเดียวกัน เลือก Official กับ Premium ได้คนละชุด และในประเภทเดียวกันเซิร์ฟเวอร์จะไม่ซ้ำ
-            </p>
-          ) : null}
         </div>
         <div>
           <Label htmlFor="boss-type">ประเภทเซิร์ฟเวอร์ *</Label>

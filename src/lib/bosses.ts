@@ -23,7 +23,7 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 const TEN_SECONDS_MS = 10 * 1000;
 const THIRTY_SECONDS_MS = 30 * 1000;
 
-/** "trial" counts down for 10 seconds, stays finished for 30, then returns to the countdown. Set this back to "hour" to restore 1 hour. */
+/** "trial" counts down for 10 seconds, stays finished for 30, then moves to ไม่พบบอส. Set this back to "hour" to restore 1 hour. */
 const BOSS_WINDOW_MODE = "trial" as "trial" | "hour";
 
 const BOSS_WINDOW_MS = BOSS_WINDOW_MODE === "trial" ? TEN_SECONDS_MS : ONE_HOUR_MS;
@@ -33,19 +33,13 @@ export const bossWindowCopy =
   BOSS_WINDOW_MODE === "trial"
     ? {
         overTitle: "ไม่พบบอส",
-        overHint: "ยังห่างกว่า 10 วินาที จึงยังไม่เริ่มนับ",
         freshTitle: "รอเกิด",
-        freshHint: "อีกไม่เกิน 10 วินาที พอนับจบไปกล่องขวา",
         upcomingTitle: "เกิดแล้ว",
-        upcomingHint: "อยู่ที่นี่ 30 วินาที แล้วย้ายไปรอเกิด",
       }
     : {
         overTitle: "ไม่พบบอส",
-        overHint: "ยังห่างกว่า 1 ชั่วโมง จึงยังไม่เริ่มนับ",
         freshTitle: "รอเกิด",
-        freshHint: "อีกไม่เกิน 1 ชั่วโมง พอนับจบไปกล่องขวา",
         upcomingTitle: "เกิดแล้ว",
-        upcomingHint: "ถึงเวลาที่เลือกแล้ว",
       };
 
 /** Clock time on today's local date, so a stored 13:03 means today at 13:03. */
@@ -68,25 +62,10 @@ export function bossSelectedAt(
 }
 
 export function bossElapsedMs(
-  boss: { hour: number; minute: number; second?: number },
+  boss: { hour: number; minute: number; second?: number | null },
   now = Date.now(),
 ): number {
   return now - bossSelectedAt(boss.hour, boss.minute, boss.second ?? 0, now);
-}
-
-/** Trial only: the ready column has already lasted 30 seconds and should return to wait. */
-export function bossShouldReturnToWait(
-  boss: {
-    hour: number;
-    minute: number;
-    second?: number;
-    boardLane?: BossBoardLane | null;
-  },
-  now = Date.now(),
-): boolean {
-  if (FINISHED_HOLD_MS === null) return false;
-  if (boss.boardLane === "not" || boss.boardLane === "wait") return false;
-  return bossElapsedMs(boss, now) >= FINISHED_HOLD_MS;
 }
 
 /** Clock that belongs in a column at this moment. The card's time and status follow it. */
@@ -135,25 +114,39 @@ export function readBoardLane(value: unknown): BossBoardLane | null {
 }
 
 /**
- * Box 2 is the last 10 seconds before the chosen time.
- * Box 3 starts when that countdown ends and lasts 30 seconds, then the row returns to box 2.
- * A ready pin expires with that hold. A not or wait pin stays until it is released.
+ * Box 2 is the last 10 seconds before the chosen time, then the row moves to box 3.
+ * Box 3 lasts 30 seconds, then the row moves to box 1.
+ * Wait and ready recapture the clock. ไม่พบบอส clears it.
+ * A card in box 1 stays there until someone moves it.
+ * A wait pin whose time has arrived always reads as ready, so the
+ * board recaptures a ready clock instead of skipping that column.
+ * A ready pin expires with that hold.
  */
 export function bossTimeGroup(
   boss: {
-    hour: number;
-    minute: number;
-    second?: number;
+    hour: number | null;
+    minute: number | null;
+    second?: number | null;
     boardLane?: BossBoardLane | null;
   },
   now = Date.now(),
 ): BossTimeGroup {
-  const elapsed = bossElapsedMs(boss, now);
+  if (boss.hour == null || boss.minute == null) {
+    if (boss.boardLane === "wait") return "fresh";
+    if (boss.boardLane === "ready") return "upcoming";
+    return "over";
+  }
+  const elapsed = bossElapsedMs(
+    { hour: boss.hour, minute: boss.minute, second: boss.second },
+    now,
+  );
   const holdExpired = FINISHED_HOLD_MS !== null && elapsed >= FINISHED_HOLD_MS;
-  if (boss.boardLane === "ready" && holdExpired) return "fresh";
+  if (boss.boardLane === "not") return "over";
+  if (boss.boardLane === "wait" && elapsed >= 0) return "upcoming";
+  if (boss.boardLane === "ready" && holdExpired) return "over";
   if (boss.boardLane) return LANE_GROUP[boss.boardLane];
   if (elapsed >= 0) {
-    if (holdExpired) return "fresh";
+    if (holdExpired) return "over";
     return "upcoming";
   }
   if (elapsed >= -BOSS_WINDOW_MS) return "fresh";
@@ -184,9 +177,9 @@ export function serializeBoss(row: {
   cityId: string;
   serverId: string;
   typeServerId: string;
-  hour: number;
-  minute: number;
-  second: number;
+  hour: number | null;
+  minute: number | null;
+  second: number | null;
   boardLane: string | null;
   createBy: string;
   updateBy: string | null;

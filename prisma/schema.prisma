@@ -276,9 +276,9 @@ model Boss {
   cityId       String     @map("city_id")
   serverId     String     @map("server_id")
   typeServerId String     @map("type_server_id")
-  hour         Int
-  minute       Int
-  second       Int        @default(0) @map("clock_second")
+  hour         Int?
+  minute       Int?
+  second       Int?       @map("clock_second")
   /// Manual column. Null follows the clock.
   boardLane    String?    @map("board_lane")
   createBy     String     @map("create_by")
