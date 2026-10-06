@@ -13,6 +13,7 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { compareServerName } from "@/lib/servers";
 import {
   BOSS_BOX_STATUS,
+  bossColumnRemainingMs,
   bossElapsedMs,
   bossTimeGroup,
   clockForGroup,
@@ -66,7 +67,23 @@ const pendingMoves = new Map<string, PendingMove>();
 const quietMoves = new Set<string>();
 const missingBosses = new Set<string>();
 const retryAt = new Map<string, number>();
+/** Bosses whose database kept the clock after a clear, so we do not retry forever. */
+const keptClocks = new Set<string>();
 const laneInflight = new Map<string, { at: number; request: Promise<Boss> }>();
+
+async function saveLane(id: string, write: LaneWrite): Promise<Boss> {
+  const clearingClock = write.hour == null && write.minute == null && write.second == null;
+  try {
+    return await bossesService.update(id, write);
+  } catch (error) {
+    if (!clearingClock || write.boardLane == null) throw error;
+    try {
+      return await bossesService.update(id, { boardLane: write.boardLane });
+    } catch {
+      throw error;
+    }
+  }
+}
 
 function sameLaneWrite(a: LaneWrite, b: LaneWrite) {
   return (
@@ -93,11 +110,13 @@ function BossElapsed({
   hour,
   minute,
   second,
+  boardLane,
   className,
 }: {
   hour: number;
   minute: number;
   second: number;
+  boardLane: Boss["boardLane"];
   className: string;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -107,16 +126,18 @@ function BossElapsed({
       const node = ref.current;
       if (!node) return;
       node.textContent = formatBossElapsed(
-        bossElapsedMs({ hour, minute, second }, at),
+        -bossColumnRemainingMs({ hour, minute, second, boardLane }, at),
       );
     };
     paint(Date.now());
     return subscribeBossClock((at) => paint(at));
-  }, [hour, minute, second]);
+  }, [boardLane, hour, minute, second]);
 
   return (
     <p ref={ref} className={className} suppressHydrationWarning>
-      {formatBossElapsed(bossElapsedMs({ hour, minute, second }))}
+      {formatBossElapsed(
+        -bossColumnRemainingMs({ hour, minute, second, boardLane }),
+      )}
     </p>
   );
 }
@@ -235,7 +256,7 @@ export function BossTable({ onEdit }: BossTableProps) {
       const key = `${id}|${write.boardLane ?? ""}|${write.hour ?? ""}|${write.minute ?? ""}`;
       const current = laneInflight.get(key);
       if (current && Date.now() - current.at < 1500) return current.request;
-      const request = bossesService.update(id, write).finally(() => {
+      const request = saveLane(id, write).finally(() => {
         const latest = laneInflight.get(key);
         if (latest?.request === request) laneInflight.delete(key);
       });
@@ -251,8 +272,13 @@ export function BossTable({ onEdit }: BossTableProps) {
       );
       return { previous };
     },
-    onSuccess: (boss) => {
+    onSuccess: (boss, vars) => {
       pendingMoves.delete(boss.id);
+      if (vars.hour == null && vars.minute == null && boss.hour != null) {
+        keptClocks.add(boss.id);
+      } else if (vars.hour != null) {
+        keptClocks.delete(boss.id);
+      }
       queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
         rows?.map((row) => (row.id === boss.id ? boss : row)),
       );
@@ -307,12 +333,13 @@ export function BossTable({ onEdit }: BossTableProps) {
       const group = bossTimeGroup(item, layoutNow);
       const elapsed = cardElapsed(item, layoutNow);
       const nextLane =
-        item.boardLane === "wait" && group === "upcoming"
+        group === "upcoming" && item.boardLane !== "ready" && item.boardLane !== "not"
           ? "ready"
           : group === "over" && item.boardLane !== "not" && elapsed >= 0
             ? "not"
             : null;
       if (
+        !keptClocks.has(item.id) &&
         item.boardLane === "not" &&
         item.hour != null &&
         item.minute != null &&
@@ -326,17 +353,24 @@ export function BossTable({ onEdit }: BossTableProps) {
         continue;
       }
       if (!nextLane) continue;
-      const captured =
-        nextLane === "ready"
-          ? clockForGroup("upcoming", Date.now())
-          : { hour: null, minute: null, second: null };
+      if (nextLane === "ready") {
+        if (item.hour == null || item.minute == null) continue;
+        writeLaneRef.current(
+          item,
+          {
+            boardLane: "ready",
+            hour: item.hour,
+            minute: item.minute,
+            second: item.second ?? 0,
+            autoReady: true,
+          },
+          true,
+        );
+        continue;
+      }
       writeLaneRef.current(
         item,
-        {
-          boardLane: nextLane,
-          ...captured,
-          ...(nextLane === "ready" ? { autoReady: true } : {}),
-        },
+        { boardLane: "not", hour: null, minute: null, second: null },
         true,
       );
     }
@@ -751,7 +785,7 @@ function BossTimeTable({
                   </span>
                 </div>
               </div>
-              {item.hour == null || item.minute == null ? null : (
+              {item.boardLane === "not" || item.hour == null || item.minute == null ? null : (
                 <div className="mt-2">
                   <p className="font-medium tabular-nums text-[var(--ink)]">
                     {formatBossTime(item.hour, item.minute, item.second ?? 0)}
@@ -760,6 +794,7 @@ function BossTimeTable({
                     hour={item.hour}
                     minute={item.minute}
                     second={item.second ?? 0}
+                    boardLane={item.boardLane}
                     className={elapsedClass}
                   />
                 </div>

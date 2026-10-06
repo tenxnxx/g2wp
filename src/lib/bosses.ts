@@ -21,7 +21,7 @@ export function formatBossTime(hour: number, minute: number, second?: number): s
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
-/** รอเกิด is the hour before the clock. เกิดแล้ว lasts one hour, then the card moves to ไม่พบบอส. */
+/** รอเกิด lasts one hour after the clock. เกิดแล้ว lasts the next hour, then the card moves to ไม่พบบอส. */
 const BOSS_WINDOW_MS = ONE_HOUR_MS;
 const FINISHED_HOLD_MS = ONE_HOUR_MS;
 
@@ -57,16 +57,16 @@ export function bossElapsedMs(
   return now - bossSelectedAt(boss.hour, boss.minute, boss.second ?? 0, now);
 }
 
-/** Clock that belongs in a column at this moment. The card's time and status follow it. */
+/** A manual drop stores a clock that the set-time comparison places in that column. */
 export function clockForGroup(
   group: BossTimeGroup,
   now = Date.now(),
 ): { hour: number; minute: number; second: number } {
   const offsetMs =
     group === "fresh"
-      ? BOSS_WINDOW_MS - 1000
+      ? 0
       : group === "upcoming"
-        ? -1_000
+        ? -(BOSS_WINDOW_MS + 1000)
         : 2 * ONE_HOUR_MS;
   const target = new Date(now + offsetMs);
   return {
@@ -74,6 +74,14 @@ export function clockForGroup(
     minute: target.getMinutes(),
     second: target.getSeconds(),
   };
+}
+
+/** A new boss starts in รอเกิด at the chosen time. That time is the start of the wait hour. */
+export function clockForNewBoss(
+  hour: number,
+  minute: number,
+): { hour: number; minute: number; second: number } {
+  return { hour, minute, second: 0 };
 }
 
 export type BossTimeGroup = "over" | "fresh" | "upcoming";
@@ -85,25 +93,15 @@ export const BOSS_BOX_STATUS: Record<BossTimeGroup, BossBoardLane> = {
   upcoming: "ready",
 };
 
-const LANE_GROUP: Record<BossBoardLane, BossTimeGroup> = {
-  not: "over",
-  wait: "fresh",
-  ready: "upcoming",
-};
-
 export function readBoardLane(value: unknown): BossBoardLane | null {
   if (value === "not" || value === "wait" || value === "ready") return value;
   return null;
 }
 
 /**
- * Box 2 is the hour before the chosen time, then the row moves to box 3.
- * Box 3 lasts one hour, then the row moves to box 1.
- * Wait and ready recapture the clock. ไม่พบบอส clears it.
- * A card in box 1 stays there until someone moves it.
- * A wait pin whose time has arrived always reads as ready, so the
- * board recaptures a ready clock instead of skipping that column.
- * A ready pin expires with that hold.
+ * The column is the set clock compared with now.
+ * Less than one hour after the clock is รอเกิด, the next hour is เกิดแล้ว,
+ * then ไม่พบบอส. A card already in ไม่พบบอส stays there until someone moves it.
  */
 export function bossTimeGroup(
   boss: {
@@ -119,21 +117,31 @@ export function bossTimeGroup(
     if (boss.boardLane === "ready") return "upcoming";
     return "over";
   }
+  if (boss.boardLane === "not") return "over";
   const elapsed = bossElapsedMs(
     { hour: boss.hour, minute: boss.minute, second: boss.second },
     now,
   );
-  const holdExpired = elapsed >= FINISHED_HOLD_MS;
-  if (boss.boardLane === "not") return "over";
-  if (boss.boardLane === "wait" && elapsed >= 0) return "upcoming";
-  if (boss.boardLane === "ready" && holdExpired) return "over";
-  if (boss.boardLane) return LANE_GROUP[boss.boardLane];
-  if (elapsed >= 0) {
-    if (holdExpired) return "over";
-    return "upcoming";
-  }
-  if (elapsed >= -BOSS_WINDOW_MS) return "fresh";
+  if (elapsed < BOSS_WINDOW_MS) return "fresh";
+  if (elapsed < BOSS_WINDOW_MS + FINISHED_HOLD_MS) return "upcoming";
   return "over";
+}
+
+/** Time left in the current column. Positive means the column has not ended. */
+export function bossColumnRemainingMs(
+  boss: {
+    hour: number;
+    minute: number;
+    second?: number | null;
+    boardLane?: BossBoardLane | null;
+  },
+  now = Date.now(),
+): number {
+  const elapsed = bossElapsedMs(boss, now);
+  const group = bossTimeGroup(boss, now);
+  if (group === "fresh") return BOSS_WINDOW_MS - elapsed;
+  if (group === "upcoming") return BOSS_WINDOW_MS + FINISHED_HOLD_MS - elapsed;
+  return -elapsed;
 }
 
 export function formatBossElapsed(elapsedMs: number): string {

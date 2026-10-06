@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/context/toast-context";
+import { clockForGroup } from "@/lib/bosses";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { bossesService } from "@/services/bosses.service";
 import { citiesService } from "@/services/cities.service";
@@ -36,8 +37,14 @@ export function BossFormModal({
   const [cityId, setCityId] = useState(item?.cityId ?? "");
   const [serverId, setServerId] = useState(item?.serverId ?? "");
   const [typeServerId, setTypeServerId] = useState(item?.typeServerId ?? "");
-  const [hour, setHour] = useState(() => new Date().getHours());
-  const [minute, setMinute] = useState(() => new Date().getMinutes());
+  const [time, setTime] = useState(() => {
+    if (item?.hour != null && item.minute != null) {
+      return { hour: item.hour, minute: item.minute };
+    }
+    const fresh = clockForGroup("fresh");
+    return { hour: fresh.hour, minute: fresh.minute };
+  });
+  const { hour, minute } = time;
   const [error, setError] = useState<string | null>(null);
 
   const citiesQuery = useQuery({
@@ -299,8 +306,8 @@ export function BossFormModal({
         <BossTimeField
           hour={hour}
           minute={minute}
-          onHourChange={setHour}
-          onMinuteChange={setMinute}
+          onHourChange={(next) => setTime((prev) => ({ ...prev, hour: next }))}
+          onMinuteChange={(next) => setTime((prev) => ({ ...prev, minute: next }))}
         />
         {error ? (
           <p

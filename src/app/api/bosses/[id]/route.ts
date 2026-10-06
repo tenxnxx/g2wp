@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import { after, NextResponse } from "next/server";
 import { actorLabel, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
@@ -9,6 +10,18 @@ import { notifyBossReady } from "@/server/notify";
 import { TYPE_SERVER_LABEL } from "@/types/type-server";
 
 type Params = { params: Promise<{ id: string }> };
+
+/** A database that still rejects a null clock can still change the lane. */
+function rejectsNullClock(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    return /must not be null/i.test(error.message);
+  }
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2011") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return /null value in column|23502|must not be null/i.test(message);
+}
 
 async function assertRefs(ids: {
   cityId?: string;
@@ -152,8 +165,6 @@ export async function PATCH(request: Request, { params }: Params) {
         }
         data.boardLane = lane;
       }
-    } else if (data.hour !== undefined || data.minute !== undefined) {
-      data.boardLane = null;
     }
 
     if (
@@ -178,10 +189,31 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const current = await prisma.boss.findUnique({
       where: { id },
-      select: { cityId: true, serverId: true, typeServerId: true, boardLane: true },
+      select: {
+        cityId: true,
+        serverId: true,
+        typeServerId: true,
+        boardLane: true,
+        hour: true,
+        minute: true,
+        second: true,
+      },
     });
     if (!current) {
       return NextResponse.json({ error: "ไม่พบบอส" }, { status: 404 });
+    }
+
+    if (body.boardLane === undefined && (data.hour !== undefined || data.minute !== undefined)) {
+      const nextHour = data.hour !== undefined ? data.hour : current.hour;
+      const nextMinute = data.minute !== undefined ? data.minute : current.minute;
+      const nextSecond = data.second !== undefined ? data.second : current.second;
+      if (
+        nextHour !== current.hour ||
+        nextMinute !== current.minute ||
+        nextSecond !== current.second
+      ) {
+        data.boardLane = null;
+      }
     }
 
     const conflict = await bossServerConflict({
@@ -194,16 +226,33 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: conflict }, { status: 409 });
     }
 
-    const boss = await prisma.boss.update({
-      where: { id },
-      data,
-      include: bossInclude,
-    });
+    const clearingClock =
+      data.hour === null && data.minute === null && data.second === null;
+    let boss;
+    try {
+      boss = await prisma.boss.update({
+        where: { id },
+        data,
+        include: bossInclude,
+      });
+    } catch (error) {
+      if (!clearingClock || !rejectsNullClock(error)) throw error;
+      console.error("boss clock clear skipped: column rejects null");
+      const laneData = { ...data };
+      delete laneData.hour;
+      delete laneData.minute;
+      delete laneData.second;
+      boss = await prisma.boss.update({
+        where: { id },
+        data: laneData,
+        include: bossInclude,
+      });
+    }
 
     await invalidateResource("bosses");
     if (
       body.autoReady === true &&
-      current.boardLane === "wait" &&
+      current.boardLane !== "ready" &&
       boss.boardLane === "ready"
     ) {
       const clock =

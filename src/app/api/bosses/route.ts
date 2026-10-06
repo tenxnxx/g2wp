@@ -3,7 +3,7 @@ import { actorLabel, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
 import { cacheKey, CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
 import { bossServerConflict } from "@/lib/boss-conflicts";
-import { bossInclude, readClockValue, serializeBoss } from "@/lib/bosses";
+import { bossInclude, clockForNewBoss, readClockValue, serializeBoss } from "@/lib/bosses";
 import { prisma } from "@/lib/db";
 import { BOSS_BOARD_MAX } from "@/lib/field-limits";
 import {
@@ -180,13 +180,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: conflict }, { status: 409 });
     }
 
+    const clock = clockForNewBoss(hour, minute);
     const boss = await prisma.boss.create({
       data: {
         cityId,
         serverId,
         typeServerId,
-        hour,
-        minute,
+        hour: clock.hour,
+        minute: clock.minute,
+        second: clock.second,
+        boardLane: "wait",
         createBy: actorLabel(auth.user),
       },
       include: bossInclude,
