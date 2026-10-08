@@ -7,14 +7,11 @@ const CLAIM_SEC = 8;
 const memoryClaim = new Map<string, number>();
 let missingChannelWarned = false;
 
-async function claim(bossId: string): Promise<boolean> {
+async function claim(key: string, seconds: number): Promise<boolean> {
   const redis = await getRedis();
   if (redis) {
     try {
-      const got = await redis.set(`g2:notify:boss-ready:${bossId}`, "1", {
-        NX: true,
-        EX: CLAIM_SEC,
-      });
+      const got = await redis.set(key, "1", { NX: true, EX: seconds });
       return got === "OK";
     } catch (error) {
       console.error(
@@ -25,17 +22,44 @@ async function claim(bossId: string): Promise<boolean> {
   }
 
   const now = Date.now();
-  const until = memoryClaim.get(bossId) ?? 0;
+  const until = memoryClaim.get(key) ?? 0;
   if (until > now) return false;
-  memoryClaim.set(bossId, now + CLAIM_SEC * 1000);
+  memoryClaim.set(key, now + seconds * 1000);
   return true;
 }
 
-/** Tell every enabled channel. A duplicate from another open board is dropped. */
-export async function notifyBossReady(
-  bossId: string,
-  notice: BossReadyNotice,
-): Promise<void> {
+async function claimed(key: string): Promise<boolean> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      return (await redis.get(key)) != null;
+    } catch (error) {
+      console.error(
+        "notify claim",
+        error instanceof Error ? error.message : "failed",
+      );
+    }
+  }
+  return (memoryClaim.get(key) ?? 0) > Date.now();
+}
+
+async function remember(key: string, seconds: number): Promise<void> {
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      await redis.set(key, "1", { EX: seconds });
+      return;
+    } catch (error) {
+      console.error(
+        "notify claim",
+        error instanceof Error ? error.message : "failed",
+      );
+    }
+  }
+  memoryClaim.set(key, Date.now() + seconds * 1000);
+}
+
+async function activeChannels(): Promise<NotifyChannel[] | null> {
   const active = [];
   let enabled = false;
   for (const channel of channels) {
@@ -53,9 +77,21 @@ export async function notifyBossReady(
           : "notify skipped: no channel configured",
       );
     }
-    return;
+    return null;
   }
-  if (!(await claim(bossId))) return;
+  return active;
+}
+
+const HOUR_SOON_REMEMBER_SEC = 10 * 60;
+
+/** Tell every enabled channel. A duplicate from another open board is dropped. */
+export async function notifyBossReady(
+  bossId: string,
+  notice: BossReadyNotice,
+): Promise<void> {
+  const active = await activeChannels();
+  if (!active) return;
+  if (!(await claim(`g2:notify:boss-ready:${bossId}`, CLAIM_SEC))) return;
 
   await Promise.all(
     active.map(async (channel) => {
@@ -69,4 +105,32 @@ export async function notifyBossReady(
       }
     }),
   );
+}
+
+/** Yellow warning that รอเกิด has five minutes left. One send per stored clock. */
+export async function notifyBossHourSoon(
+  bossId: string,
+  clockKey: string,
+  notice: BossReadyNotice,
+): Promise<void> {
+  const doneKey = `g2:notify:boss-hour-soon:${bossId}:${clockKey}`;
+  if (await claimed(doneKey)) return;
+  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return;
+  const active = await activeChannels();
+  if (!active) return;
+
+  const delivered = await Promise.all(
+    active.map(async (channel) => {
+      try {
+        return await channel.sendBossHourSoon(notice);
+      } catch (error) {
+        console.error(
+          `notify ${channel.id}`,
+          error instanceof Error ? error.message : "failed",
+        );
+        return false;
+      }
+    }),
+  );
+  if (delivered.some(Boolean)) await remember(doneKey, HOUR_SOON_REMEMBER_SEC);
 }

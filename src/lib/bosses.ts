@@ -24,6 +24,10 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 /** รอเกิด lasts one hour after the clock. เกิดแล้ว lasts the next hour, then the card moves to ไม่พบบอส. */
 const BOSS_WINDOW_MS = ONE_HOUR_MS;
 const FINISHED_HOLD_MS = ONE_HOUR_MS;
+/** The first half of เกิดแล้ว still counts down. The rest is marked late. */
+const READY_EARLY_MS = 30 * 60 * 1000;
+/** Warn once while รอเกิด still has this much of its hour left. */
+const HOUR_SOON_MS = 5 * 60 * 1000;
 
 export const bossWindowCopy = {
   overTitle: "ไม่พบบอส",
@@ -127,8 +131,44 @@ export function bossTimeGroup(
   return "over";
 }
 
-/** Time left in the current column. Positive means the column has not ended. */
-export function bossColumnRemainingMs(
+/** True while รอเกิด has at most five minutes left before the hour ends. */
+export function bossHourAlmostDone(
+  boss: {
+    hour: number | null;
+    minute: number | null;
+    second?: number | null;
+    boardLane?: BossBoardLane | null;
+  },
+  now = Date.now(),
+): boolean {
+  if (boss.hour == null || boss.minute == null) return false;
+  if (boss.boardLane === "not" || boss.boardLane === "ready") return false;
+  if (bossTimeGroup(boss, now) !== "fresh") return false;
+  const remaining =
+    BOSS_WINDOW_MS -
+    bossElapsedMs(
+      { hour: boss.hour, minute: boss.minute, second: boss.second },
+      now,
+    );
+  return remaining > 0 && remaining <= HOUR_SOON_MS;
+}
+
+function formatDurationBody(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  if (hours === 0) return `${minutes} นาที ${seconds} วิ`;
+  return `${hours} ชม. ${String(minutes).padStart(2, "0")} นาที ${seconds} วิ`;
+}
+
+export type BossLaneClockTone = "early" | "late" | "plain";
+
+/**
+ * รอเกิด counts down to spawn.
+ * เกิดแล้ว counts up from the moment it spawned: green for the first 30 minutes, then red.
+ */
+export function bossLaneClock(
   boss: {
     hour: number;
     minute: number;
@@ -136,25 +176,20 @@ export function bossColumnRemainingMs(
     boardLane?: BossBoardLane | null;
   },
   now = Date.now(),
-): number {
+): { text: string; tone: BossLaneClockTone } {
   const elapsed = bossElapsedMs(boss, now);
   const group = bossTimeGroup(boss, now);
-  if (group === "fresh") return BOSS_WINDOW_MS - elapsed;
-  if (group === "upcoming") return BOSS_WINDOW_MS + FINISHED_HOLD_MS - elapsed;
-  return -elapsed;
-}
-
-export function formatBossElapsed(elapsedMs: number): string {
-  const ahead = elapsedMs < 0;
-  const totalSeconds = Math.floor(Math.abs(elapsedMs) / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  const body =
-    hours === 0
-      ? `${minutes} นาที ${seconds} วิ`
-      : `${hours} ชม. ${String(minutes).padStart(2, "0")} นาที ${seconds} วิ`;
-  return ahead ? `อีก ${body}` : `ผ่านมา ${body}`;
+  if (group === "upcoming") {
+    const sinceReady = elapsed - BOSS_WINDOW_MS;
+    return {
+      text: `ผ่านมาแล้ว ${formatDurationBody(sinceReady)}`,
+      tone: sinceReady < READY_EARLY_MS ? "early" : "late",
+    };
+  }
+  if (group === "fresh") {
+    return { text: `อีก ${formatDurationBody(BOSS_WINDOW_MS - elapsed)}`, tone: "plain" };
+  }
+  return { text: `ผ่านมา ${formatDurationBody(elapsed)}`, tone: "plain" };
 }
 
 export const bossInclude = {

@@ -77,6 +77,12 @@ export const bossesService = {
     }).then((res) => parseJson<Boss>(res));
   },
 
+  warnHourSoon(id: string): Promise<{ sent: boolean }> {
+    return fetch(`${BASE}/${id}/hour-soon`, { method: "POST" }).then((res) =>
+      parseJson<{ sent: boolean }>(res),
+    );
+  },
+
   remove(id: string): Promise<void> {
     return fetch(`${BASE}/${id}`, { method: "DELETE" }).then(async (res) => {
       if (!res.ok) {

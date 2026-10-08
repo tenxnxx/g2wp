@@ -38,18 +38,62 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
-function messageText(notice: BossReadyNotice): string {
-  const city = escapeHtml(notice.cityName);
-  const server = escapeHtml(notice.serverName);
-  const type = escapeHtml(notice.typeLabel);
+function cardLines(notice: BossReadyNotice): string[] {
   const lines = [
-    "🟢 <b>เกิดแล้ว</b>",
-    `<b>${city}</b>`,
-    server,
-    type,
+    `<b>${escapeHtml(notice.cityName)}</b>`,
+    escapeHtml(notice.serverName),
+    escapeHtml(notice.typeLabel),
   ];
   if (notice.clock) lines.push(`<code>${escapeHtml(notice.clock)}</code>`);
-  return lines.join("\n\n");
+  return lines;
+}
+
+function messageText(notice: BossReadyNotice): string {
+  return ["🟢 <b>เกิดแล้ว</b>", ...cardLines(notice)].join("\n\n");
+}
+
+function hourSoonText(notice: BossReadyNotice): string {
+  return ["🟡 <b>อีก 5 นาทีจะครบ 1 ชั่วโมง</b>", ...cardLines(notice)].join("\n\n");
+}
+
+async function postHtml(text: string): Promise<boolean> {
+  const token = botToken();
+  if (!token) return false;
+
+  try {
+    const chatId = await resolveChatId(token);
+    if (!chatId) {
+      console.error("telegram notify skipped: no chat");
+      return false;
+    }
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+        signal: AbortSignal.timeout(8_000),
+      },
+    );
+
+    if (response.ok) return true;
+
+    const body = (await response.json().catch(() => null)) as {
+      description?: unknown;
+    } | null;
+    const description =
+      body && typeof body.description === "string" ? body.description : "";
+    console.error("telegram notify failed", response.status, description);
+    return false;
+  } catch {
+    console.error("telegram notify failed");
+    return false;
+  }
 }
 
 export const telegramChannel: NotifyChannel = {
@@ -67,40 +111,9 @@ export const telegramChannel: NotifyChannel = {
     }
   },
   async sendBossReady(notice) {
-    const token = botToken();
-    if (!token) return;
-
-    try {
-      const chatId = await resolveChatId(token);
-      if (!chatId) {
-        console.error("telegram notify skipped: no chat");
-        return;
-      }
-      const response = await fetch(
-        `https://api.telegram.org/bot${token}/sendMessage`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: messageText(notice),
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-          }),
-          signal: AbortSignal.timeout(8_000),
-        },
-      );
-
-      if (response.ok) return;
-
-      const body = (await response.json().catch(() => null)) as {
-        description?: unknown;
-      } | null;
-      const description =
-        body && typeof body.description === "string" ? body.description : "";
-      console.error("telegram notify failed", response.status, description);
-    } catch {
-      console.error("telegram notify failed");
-    }
+    await postHtml(messageText(notice));
+  },
+  sendBossHourSoon(notice) {
+    return postHtml(hourSoonText(notice));
   },
 };

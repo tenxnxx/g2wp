@@ -13,13 +13,13 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { compareServerName } from "@/lib/servers";
 import {
   BOSS_BOX_STATUS,
-  bossColumnRemainingMs,
   bossElapsedMs,
+  bossHourAlmostDone,
   bossTimeGroup,
   clockForGroup,
   bossWindowCopy,
   type BossTimeGroup,
-  formatBossElapsed,
+  bossLaneClock,
   formatBossTime,
 } from "@/lib/bosses";
 import { subscribeBossClock } from "@/components/bosses/use-boss-clock";
@@ -120,24 +120,39 @@ function BossElapsed({
   className: string;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
+  const clock = bossLaneClock({ hour, minute, second, boardLane });
 
   useEffect(() => {
     const paint = (at: number) => {
       const node = ref.current;
       if (!node) return;
-      node.textContent = formatBossElapsed(
-        -bossColumnRemainingMs({ hour, minute, second, boardLane }, at),
-      );
+      const next = bossLaneClock({ hour, minute, second, boardLane }, at);
+      node.textContent = next.text;
+      node.style.color =
+        next.tone === "late"
+          ? "var(--danger)"
+          : next.tone === "early"
+            ? "var(--accent-strong)"
+            : "";
     };
     paint(Date.now());
     return subscribeBossClock((at) => paint(at));
   }, [boardLane, hour, minute, second]);
 
   return (
-    <p ref={ref} className={className} suppressHydrationWarning>
-      {formatBossElapsed(
-        -bossColumnRemainingMs({ hour, minute, second, boardLane }),
-      )}
+    <p
+      ref={ref}
+      className={className}
+      style={
+        clock.tone === "late"
+          ? { color: "var(--danger)" }
+          : clock.tone === "early"
+            ? { color: "var(--accent-strong)" }
+            : undefined
+      }
+      suppressHydrationWarning
+    >
+      {clock.text}
     </p>
   );
 }
@@ -233,6 +248,32 @@ export function BossTable({ onEdit }: BossTableProps) {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  const warnedHourSoon = useRef(new Set<string>());
+
+  useEffect(() => {
+    return subscribeBossClock((at) => {
+      for (const item of itemsRef.current) {
+        if (missingBosses.has(item.id) || item.hour == null || item.minute == null) continue;
+        if (!bossHourAlmostDone(item, at)) continue;
+        const mark = `${item.id}:${item.hour}:${item.minute}:${item.second ?? 0}`;
+        if (warnedHourSoon.current.has(mark)) continue;
+        warnedHourSoon.current.add(mark);
+        void bossesService
+          .warnHourSoon(item.id)
+          .then((result) => {
+            if (!result.sent) warnedHourSoon.current.delete(mark);
+          })
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.message === "ไม่พบบอส") {
+              missingBosses.add(item.id);
+              return;
+            }
+            warnedHourSoon.current.delete(mark);
+          });
+      }
+    });
+  }, []);
 
   useEffect(() => {
     return subscribeBossClock((next) => {

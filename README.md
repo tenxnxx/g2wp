@@ -12,7 +12,7 @@ npm install
 npm run db:up                # Postgres ใน Docker ที่ localhost:5433
 npx prisma migrate deploy
 npx prisma generate
-npm run dev                  # http://localhost:4000
+npm run dev                  # http://localhost:9000
 ```
 
 ฐานข้อมูล local คือ Postgres 16 ใน `docker-compose.yml` (`g2wp` / `g2wp`, ฐาน `g2wp`, พอร์ต `5433` เพื่อไม่ชน Postgres ที่อาจเปิดอยู่บนเครื่องแล้ว). ข้อมูลอยู่ใน volume `g2wp_pgdata`. หยุดด้วย `npm run db:down` (volume ยังอยู่). ล็อกอินยังใช้ Supabase Auth ตามคีย์ใน `.env`
@@ -55,7 +55,7 @@ npx netlify env:set ADMIN_EMAILS "tenx@g2wp.com"
 |--------|-----------|
 | `npm run db:up` | เปิด Postgres ใน Docker |
 | `npm run db:down` | หยุด Postgres (ข้อมูลใน volume ยังอยู่) |
-| `npm run dev` | พัฒนาพอร์ต 4000 |
+| `npm run dev` | พัฒนาพอร์ต 9000 |
 | `npm run build` | generate + build |
 | `npm run build:release` | migrate + generate + build |
 | `npm run db:deploy` | `prisma migrate deploy` |

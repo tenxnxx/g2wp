@@ -16,4 +16,6 @@ export type NotifyChannel = {
   /** False when this channel has nowhere to deliver yet. */
   available(): Promise<boolean>;
   sendBossReady(notice: BossReadyNotice): Promise<void>;
+  /** True when the yellow five-minute warning was delivered. */
+  sendBossHourSoon(notice: BossReadyNotice): Promise<boolean>;
 };

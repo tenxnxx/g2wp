@@ -27,6 +27,9 @@ function normalUserMayCallApi(request: NextRequest): boolean {
   ) {
     return true;
   }
+  if (method === "POST" && /^\/api\/bosses\/[^/]+\/hour-soon$/.test(pathname)) {
+    return true;
+  }
   if (
     method === "GET" &&
     (pathname === "/api/cities" ||
