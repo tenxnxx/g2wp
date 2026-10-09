@@ -112,12 +112,12 @@ export async function notifyBossHourSoon(
   bossId: string,
   clockKey: string,
   notice: BossReadyNotice,
-): Promise<void> {
+): Promise<boolean> {
   const doneKey = `g2:notify:boss-hour-soon:${bossId}:${clockKey}`;
-  if (await claimed(doneKey)) return;
-  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return;
+  if (await claimed(doneKey)) return true;
+  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
   const active = await activeChannels();
-  if (!active) return;
+  if (!active) return false;
 
   const delivered = await Promise.all(
     active.map(async (channel) => {
@@ -132,5 +132,7 @@ export async function notifyBossHourSoon(
       }
     }),
   );
-  if (delivered.some(Boolean)) await remember(doneKey, HOUR_SOON_REMEMBER_SEC);
+  if (!delivered.some(Boolean)) return false;
+  await remember(doneKey, HOUR_SOON_REMEMBER_SEC);
+  return true;
 }

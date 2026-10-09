@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse } from "@/lib/api-errors";
 import {
@@ -44,15 +44,17 @@ export async function POST(_request: Request, { params }: Params) {
       boss.hour != null && boss.minute != null
         ? formatBossTime(boss.hour, boss.minute, boss.second ?? undefined)
         : null;
-    after(() =>
-      notifyBossHourSoon(id, `${boss.hour}:${boss.minute}:${boss.second ?? 0}`, {
+    const sent = await notifyBossHourSoon(
+      id,
+      `${boss.hour}:${boss.minute}:${boss.second ?? 0}`,
+      {
         cityName: boss.city.cityName,
         serverName: boss.server.serverName,
         typeLabel: TYPE_SERVER_LABEL[boss.typeServer.type],
         clock,
-      }),
+      },
     );
-    return NextResponse.json({ sent: true });
+    return NextResponse.json({ sent });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to warn boss hour");
   }

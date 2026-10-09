@@ -41,8 +41,8 @@ function escapeHtml(value: string): string {
 function cardLines(notice: BossReadyNotice): string[] {
   const lines = [
     `<b>${escapeHtml(notice.cityName)}</b>`,
-    escapeHtml(notice.serverName),
-    escapeHtml(notice.typeLabel),
+    `<b>${escapeHtml(notice.serverName)}</b>`,
+    `<b>${escapeHtml(notice.typeLabel)}</b>`,
   ];
   if (notice.clock) lines.push(`<code>${escapeHtml(notice.clock)}</code>`);
   return lines;

@@ -35,23 +35,26 @@ export const bossWindowCopy = {
   upcomingTitle: "เกิดแล้ว",
 };
 
-/** Clock time on today's local date, so a stored 13:03 means today at 13:03. */
+/** Thailand has no daylight saving. Stored clocks are wall time in this zone. */
+const BOARD_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Clock time on today's date in Thailand, so a stored 13:03 means 13:03 ICT on any server. */
 export function bossSelectedAt(
   hour: number,
   minute: number,
   second = 0,
   now = Date.now(),
 ): number {
-  const day = new Date(now);
-  return new Date(
-    day.getFullYear(),
-    day.getMonth(),
-    day.getDate(),
-    hour,
+  const board = new Date(now + BOARD_UTC_OFFSET_MS);
+  return Date.UTC(
+    board.getUTCFullYear(),
+    board.getUTCMonth(),
+    board.getUTCDate(),
+    hour - 7,
     minute,
     second,
     0,
-  ).getTime();
+  );
 }
 
 export function bossElapsedMs(
@@ -187,7 +190,9 @@ export function bossLaneClock(
     };
   }
   if (group === "fresh") {
-    return { text: `อีก ${formatDurationBody(BOSS_WINDOW_MS - elapsed)}`, tone: "plain" };
+    // A clock still later today has not started its hour, so the countdown stays within one hour.
+    const remaining = Math.min(BOSS_WINDOW_MS, Math.max(0, BOSS_WINDOW_MS - elapsed));
+    return { text: `อีก ${formatDurationBody(remaining)}`, tone: "plain" };
   }
   return { text: `ผ่านมา ${formatDurationBody(elapsed)}`, tone: "plain" };
 }
