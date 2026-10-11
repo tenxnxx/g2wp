@@ -19,7 +19,7 @@ export function BossSectionNav() {
   return (
     <nav
       aria-label="จัดการข้อมูลบอส"
-      className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 [&::-webkit-scrollbar]:hidden"
+      className="flex flex-wrap gap-2 pb-1"
     >
       {LINKS.map((item) => {
         const active = pathname === item.href;

@@ -2,6 +2,13 @@ import { after } from "next/server";
 import { isLiveTopic } from "@/lib/live";
 import { getRedis } from "@/lib/redis";
 
+/** Lazy import avoids Turbopack HMR leaving a stale `withDbRetry` binding as undefined. */
+async function loadDb<T>(load: () => Promise<T>): Promise<T> {
+  const { withDbRetry } = await import("@/lib/db");
+  if (typeof withDbRetry !== "function") return load();
+  return withDbRetry(load);
+}
+
 const PREFIX = "g2:c:v1:";
 
 export const CACHE_TTL = {
@@ -106,14 +113,14 @@ export async function remember<T>(
   const redis = await getRedis();
   const fullKey = PREFIX + key;
 
-  if (!redis) return load();
+  if (!redis) return loadDb(load);
 
   try {
     const cached = await readCached<T>(redis, fullKey);
     if (cached.hit) return cached.value;
   } catch (error) {
     console.error("cache read", error instanceof Error ? error.message : error);
-    return load();
+    return loadDb(load);
   }
 
   const lockKey = `${fullKey}:lock`;
@@ -133,10 +140,10 @@ export async function remember<T>(
       );
     } catch (error) {
       console.error("cache read", error instanceof Error ? error.message : error);
-      return load();
+      return loadDb(load);
     }
 
-    const value = await load();
+    const value = await loadDb(load);
     try {
       const payload = JSON.stringify(value);
       const tagTtl = String(Math.max(ttlSec, 120));

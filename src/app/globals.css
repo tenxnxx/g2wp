@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  /* Self-hosted via @fontsource — avoids next/font/google Turbopack failures. */
+  --font-display: "Kanit", system-ui, sans-serif;
+  --font-body: "Noto Sans Thai", system-ui, sans-serif;
   /* Ash / bone / olive drab — WarZTH dark survival portal */
   --canvas: #0a0908;
   --surface: #14110f;

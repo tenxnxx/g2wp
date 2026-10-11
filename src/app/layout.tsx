@@ -1,19 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Kanit, Noto_Sans_Thai } from "next/font/google";
 import { AppProviders } from "@/context/app-providers";
+import "@fontsource/kanit/thai-600.css";
+import "@fontsource/kanit/latin-600.css";
+import "@fontsource/kanit/thai-700.css";
+import "@fontsource/kanit/latin-700.css";
+import "@fontsource/noto-sans-thai/thai-400.css";
+import "@fontsource/noto-sans-thai/latin-400.css";
+import "@fontsource/noto-sans-thai/thai-500.css";
+import "@fontsource/noto-sans-thai/latin-500.css";
+import "@fontsource/noto-sans-thai/thai-600.css";
+import "@fontsource/noto-sans-thai/latin-600.css";
+import "@fontsource/noto-sans-thai/thai-700.css";
+import "@fontsource/noto-sans-thai/latin-700.css";
 import "./globals.css";
-
-const display = Kanit({
-  variable: "--font-display",
-  subsets: ["thai", "latin"],
-  weight: ["600", "700"],
-});
-
-const body = Noto_Sans_Thai({
-  variable: "--font-body",
-  subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -35,10 +34,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="th"
-      className={`${display.variable} ${body.variable} h-full antialiased`}
-    >
+    <html lang="th" className="h-full antialiased">
       <body className="min-h-full font-[family-name:var(--font-body)]">
         <AppProviders>{children}</AppProviders>
       </body>

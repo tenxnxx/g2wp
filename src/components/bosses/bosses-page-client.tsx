@@ -28,7 +28,7 @@ export function BossesPageClient() {
     <div className="space-y-4">
       <BossSectionNav />
       <div className="flex items-center justify-between gap-3">
-        <h1 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-[var(--ink)] sm:text-2xl">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-[var(--ink)]">
           บอส
         </h1>
         <Button type="button" onClick={openCreate} className="h-11 shrink-0 px-4">
