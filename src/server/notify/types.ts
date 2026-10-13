@@ -6,10 +6,7 @@ export type BossReadyNotice = {
   clock: string | null;
 };
 
-/**
- * One outbound channel. Telegram is wired now.
- * A Discord channel later implements the same two methods and is added in index.ts.
- */
+/** One outbound channel (Telegram, Discord, …). */
 export type NotifyChannel = {
   id: string;
   enabled(): boolean;

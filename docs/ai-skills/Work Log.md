@@ -1,5 +1,13 @@
 # Work Log
 
+## 2026-10-13 16:05 — เพิ่ม Discord webhook แจ้งเตือนคู่ Telegram
+
+ทำอะไร/ผล: ช่อง `discord` ส่ง embed 🟡/🟢 ชุดเดียวกับ Telegram, remember แยกต่อช่องเพื่อ retry ช่องที่พลาด, env `DISCORD_WEBHOOK_URL`
+
+ไฟล์ที่เกี่ยว: `notify/discord.ts`, `notify/index.ts`, `.env.example`, `render.yaml`
+
+ขั้นถัดไป: ตั้ง `DISCORD_WEBHOOK_URL` บน Render — หมุน webhook ถ้า URL เคยแชร์สาธารณะ
+
 ## 2026-10-13 15:55 — ปรับ deploy เป็น Render
 
 ทำอะไร/ผล: `npm start` ใช้ `$PORT`, ลบ Netlify scheduled function, เพิ่ม `render.yaml` + README สำหรับ Web Service / Cron backup — บน Render ที่ค้าง process บอทวิ่งจาก interval 15s ไม่ต้องพึ่ง Netlify

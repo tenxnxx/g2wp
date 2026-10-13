@@ -1,8 +1,9 @@
 import { getRedis } from "@/lib/redis";
+import { discordChannel } from "@/server/notify/discord";
 import { telegramChannel } from "@/server/notify/telegram";
 import type { BossReadyNotice, NotifyChannel } from "@/server/notify/types";
 
-const channels: NotifyChannel[] = [telegramChannel];
+const channels: NotifyChannel[] = [telegramChannel, discordChannel];
 const CLAIM_SEC = 8;
 /** Cover the full wait+ready window so a successful send is not repeated for the same clock. */
 const READY_REMEMBER_SEC = 3 * 60 * 60;
@@ -85,65 +86,68 @@ async function activeChannels(): Promise<NotifyChannel[] | null> {
   return active;
 }
 
+async function deliverAll(
+  kind: "boss-ready" | "boss-hour-soon",
+  bossId: string,
+  clockKey: string,
+  rememberSec: number,
+  send: (channel: NotifyChannel) => Promise<boolean>,
+): Promise<boolean> {
+  const active = await activeChannels();
+  if (!active) return false;
+
+  const results = await Promise.all(
+    active.map(async (channel) => {
+      const doneKey = `g2:notify:${kind}:${bossId}:${clockKey}:${channel.id}`;
+      if (await claimed(doneKey)) return true;
+      if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
+      try {
+        const ok = await send(channel);
+        if (ok) await remember(doneKey, rememberSec);
+        return ok;
+      } catch (error) {
+        console.error(
+          `notify ${channel.id}`,
+          error instanceof Error ? error.message : "failed",
+        );
+        return false;
+      }
+    }),
+  );
+
+  // True only when every active channel delivered (or was already remembered).
+  return results.every(Boolean);
+}
+
 /**
  * Tell every enabled channel that wait → ready just happened.
- * One successful send per boss clock; failed sends can retry.
+ * One successful send per boss clock per channel; failed channels can retry.
  */
 export async function notifyBossReady(
   bossId: string,
   clockKey: string,
   notice: BossReadyNotice,
 ): Promise<boolean> {
-  const doneKey = `g2:notify:boss-ready:${bossId}:${clockKey}`;
-  if (await claimed(doneKey)) return true;
-  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
-  const active = await activeChannels();
-  if (!active) return false;
-
-  const delivered = await Promise.all(
-    active.map(async (channel) => {
-      try {
-        return await channel.sendBossReady(notice);
-      } catch (error) {
-        console.error(
-          `notify ${channel.id}`,
-          error instanceof Error ? error.message : "failed",
-        );
-        return false;
-      }
-    }),
+  return deliverAll(
+    "boss-ready",
+    bossId,
+    clockKey,
+    READY_REMEMBER_SEC,
+    (channel) => channel.sendBossReady(notice),
   );
-  if (!delivered.some(Boolean)) return false;
-  await remember(doneKey, READY_REMEMBER_SEC);
-  return true;
 }
 
-/** Yellow warning that รอเกิด has five minutes left. One send per stored clock. */
+/** Yellow warning that รอเกิด has five minutes left. One send per stored clock per channel. */
 export async function notifyBossHourSoon(
   bossId: string,
   clockKey: string,
   notice: BossReadyNotice,
 ): Promise<boolean> {
-  const doneKey = `g2:notify:boss-hour-soon:${bossId}:${clockKey}`;
-  if (await claimed(doneKey)) return true;
-  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
-  const active = await activeChannels();
-  if (!active) return false;
-
-  const delivered = await Promise.all(
-    active.map(async (channel) => {
-      try {
-        return await channel.sendBossHourSoon(notice);
-      } catch (error) {
-        console.error(
-          `notify ${channel.id}`,
-          error instanceof Error ? error.message : "failed",
-        );
-        return false;
-      }
-    }),
+  return deliverAll(
+    "boss-hour-soon",
+    bossId,
+    clockKey,
+    HOUR_SOON_REMEMBER_SEC,
+    (channel) => channel.sendBossHourSoon(notice),
   );
-  if (!delivered.some(Boolean)) return false;
-  await remember(doneKey, HOUR_SOON_REMEMBER_SEC);
-  return true;
 }

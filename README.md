@@ -47,7 +47,7 @@ npm ci && npm run build:release
 npm start   # listens on $PORT (Render) or 7321 locally
 ```
 
-ตั้ง env บน Render ให้ครบอย่างน้อย: `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_*`, `ADMIN_EMAILS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `REDIS_URL` (แนะนำ)
+ตั้ง env บน Render ให้ครบอย่างน้อย: `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_*`, `ADMIN_EMAILS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DISCORD_WEBHOOK_URL`, `REDIS_URL` (แนะนำ)
 
 **บอทแจ้งเตือน:** บน Web Service ที่ไม่ sleep ไม่ต้องมี Cron — `instrumentation` สแกนเองทุก 15 วินาที  
 ถ้าใช้ฟรีเทียร์ที่ sleep หรืออยาก backup ให้สร้าง Render Cron Job ยิง  
