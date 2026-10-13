@@ -74,12 +74,13 @@ export function clockForGroup(
       ? 0
       : group === "upcoming"
         ? -(BOSS_WINDOW_MS + 1000)
-        : 2 * ONE_HOUR_MS;
-  const target = new Date(now + offsetMs);
+        : -(BOSS_WINDOW_MS + FINISHED_HOLD_MS + 1000);
+  // Match bossSelectedAt: wall time in ICT, not the browser/OS local zone.
+  const board = new Date(now + offsetMs + BOARD_UTC_OFFSET_MS);
   return {
-    hour: target.getHours(),
-    minute: target.getMinutes(),
-    second: target.getSeconds(),
+    hour: board.getUTCHours(),
+    minute: board.getUTCMinutes(),
+    second: board.getUTCSeconds(),
   };
 }
 

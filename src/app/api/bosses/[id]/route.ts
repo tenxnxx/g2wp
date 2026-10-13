@@ -2,7 +2,12 @@ import { Prisma } from "@/generated/prisma/client";
 import { after, NextResponse } from "next/server";
 import { actorLabel, requireUser } from "@/lib/api-auth";
 import { prismaErrorResponse, readJsonBody } from "@/lib/api-errors";
-import { CACHE_TTL, invalidateResource, remember } from "@/lib/cache";
+import {
+  CACHE_TTL,
+  invalidateBossesRemoved,
+  invalidateBossesWithPatch,
+  remember,
+} from "@/lib/cache";
 import { bossServerConflict } from "@/lib/boss-conflicts";
 import { bossInclude, formatBossTime, readBoardLane, readClockValue, serializeBoss } from "@/lib/bosses";
 import { prisma } from "@/lib/db";
@@ -197,10 +202,27 @@ export async function PATCH(request: Request, { params }: Params) {
         hour: true,
         minute: true,
         second: true,
+        updatedAt: true,
       },
     });
     if (!current) {
       return NextResponse.json({ error: "ไม่พบบอส" }, { status: 404 });
+    }
+
+    const expectedUpdatedAt =
+      typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt.trim() : "";
+    if (expectedUpdatedAt && current.updatedAt.toISOString() !== expectedUpdatedAt) {
+      const fresh = await prisma.boss.findUnique({
+        where: { id },
+        include: bossInclude,
+      });
+      return NextResponse.json(
+        {
+          error: "ข้อมูลถูกแก้โดยคนอื่น",
+          boss: fresh ? serializeBoss(fresh) : null,
+        },
+        { status: 409 },
+      );
     }
 
     if (body.boardLane === undefined && (data.hour !== undefined || data.minute !== undefined)) {
@@ -249,26 +271,32 @@ export async function PATCH(request: Request, { params }: Params) {
       });
     }
 
-    await invalidateResource("bosses");
+    const serialized = serializeBoss(boss);
+    await invalidateBossesWithPatch(serialized);
     if (
       body.autoReady === true &&
       current.boardLane !== "ready" &&
-      boss.boardLane === "ready"
+      boss.boardLane === "ready" &&
+      boss.hour != null &&
+      boss.minute != null
     ) {
-      const clock =
-        boss.hour != null && boss.minute != null
-          ? formatBossTime(boss.hour, boss.minute, boss.second ?? undefined)
-          : null;
-      after(() =>
-        notifyBossReady(id, {
+      const clockKey = `${boss.hour}:${boss.minute}:${boss.second ?? 0}`;
+      const clock = formatBossTime(
+        boss.hour,
+        boss.minute,
+        boss.second ?? undefined,
+      );
+      // Server board-watch is primary; this is a backup when the tab promotes first.
+      after(async () => {
+        await notifyBossReady(id, clockKey, {
           cityName: boss.city.cityName,
           serverName: boss.server.serverName,
           typeLabel: TYPE_SERVER_LABEL[boss.typeServer.type],
           clock,
-        }),
-      );
+        });
+      });
     }
-    return NextResponse.json(serializeBoss(boss));
+    return NextResponse.json(serialized);
   } catch (error) {
     return prismaErrorResponse(error, "Failed to update boss");
   }
@@ -281,7 +309,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
     const { id } = await params;
     await prisma.boss.delete({ where: { id } });
-    await invalidateResource("bosses");
+    await invalidateBossesRemoved(id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return prismaErrorResponse(error, "Failed to delete boss");

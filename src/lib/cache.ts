@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { isLiveTopic } from "@/lib/live";
+import { isLiveTopic, type LivePayload } from "@/lib/live";
 import { getRedis } from "@/lib/redis";
 
 /** Lazy import avoids Turbopack HMR leaving a stale `withDbRetry` binding as undefined. */
@@ -9,7 +9,8 @@ async function loadDb<T>(load: () => Promise<T>): Promise<T> {
   return withDbRetry(load);
 }
 
-const PREFIX = "g2:c:v1:";
+/** v2 stores gen fingerprints so orphan keys cannot serve stale JSON after invalidate. */
+const PREFIX = "g2:c:v2:";
 
 export const CACHE_TTL = {
   list: 30,
@@ -45,6 +46,8 @@ export function cacheKey(path: string, searchParams: URLSearchParams, scope = ""
 }
 
 type Redis = NonNullable<Awaited<ReturnType<typeof getRedis>>>;
+
+type CacheEnvelope<T> = { d: T; g: string[] };
 
 function genKey(tag: string) {
   return `${PREFIX}gen:${tag}`;
@@ -85,16 +88,59 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readCached<T>(redis: Redis, fullKey: string): Promise<{ hit: true; value: T } | { hit: false }> {
-  const raw = await redis.get(fullKey);
-  if (raw == null) return { hit: false };
-  return { hit: true, value: JSON.parse(raw) as T };
+async function currentGens(redis: Redis, tags: readonly string[]): Promise<string[]> {
+  return Promise.all(tags.map(async (tag) => (await redis.get(genKey(tag))) ?? "0"));
 }
 
-async function waitCached<T>(redis: Redis, fullKey: string): Promise<{ hit: true; value: T } | { hit: false }> {
+function gensMatch(stored: unknown, current: string[]): boolean {
+  if (!Array.isArray(stored) || stored.length !== current.length) return false;
+  return stored.every((gen, i) => gen === current[i]);
+}
+
+async function readCached<T>(
+  redis: Redis,
+  fullKey: string,
+  tags: readonly string[],
+): Promise<{ hit: true; value: T } | { hit: false }> {
+  const raw = await redis.get(fullKey);
+  if (raw == null) return { hit: false };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    await redis.del(fullKey).catch(() => undefined);
+    return { hit: false };
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("d" in parsed) ||
+    !("g" in parsed)
+  ) {
+    // Legacy bare JSON (v1) — drop so the next write stores an envelope.
+    await redis.del(fullKey).catch(() => undefined);
+    return { hit: false };
+  }
+
+  const envelope = parsed as CacheEnvelope<T>;
+  const gens = await currentGens(redis, tags);
+  if (!gensMatch(envelope.g, gens)) {
+    await redis.del(fullKey).catch(() => undefined);
+    return { hit: false };
+  }
+  return { hit: true, value: envelope.d };
+}
+
+async function waitCached<T>(
+  redis: Redis,
+  fullKey: string,
+  tags: readonly string[],
+): Promise<{ hit: true; value: T } | { hit: false }> {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await sleep(80);
-    const cached = await readCached<T>(redis, fullKey);
+    const cached = await readCached<T>(redis, fullKey, tags);
     if (cached.hit) return cached;
   }
   return { hit: false };
@@ -116,7 +162,7 @@ export async function remember<T>(
   if (!redis) return loadDb(load);
 
   try {
-    const cached = await readCached<T>(redis, fullKey);
+    const cached = await readCached<T>(redis, fullKey, tags);
     if (cached.hit) return cached.value;
   } catch (error) {
     console.error("cache read", error instanceof Error ? error.message : error);
@@ -132,12 +178,10 @@ export async function remember<T>(
       const got = await redis.set(lockKey, token, { NX: true, EX: 8 });
       locked = got === "OK";
       if (!locked) {
-        const waited = await waitCached<T>(redis, fullKey);
+        const waited = await waitCached<T>(redis, fullKey, tags);
         if (waited.hit) return waited.value;
       }
-      expected = await Promise.all(
-        tags.map(async (tag) => (await redis.get(genKey(tag))) ?? "0"),
-      );
+      expected = await currentGens(redis, tags);
     } catch (error) {
       console.error("cache read", error instanceof Error ? error.message : error);
       return loadDb(load);
@@ -145,7 +189,8 @@ export async function remember<T>(
 
     const value = await loadDb(load);
     try {
-      const payload = JSON.stringify(value);
+      const envelope: CacheEnvelope<T> = { d: value, g: expected };
+      const payload = JSON.stringify(envelope);
       const tagTtl = String(Math.max(ttlSec, 120));
       await redis.eval(STORE_IF_GEN, {
         keys: [...tags.map(genKey), fullKey, ...tags.map(tagKey)],
@@ -162,12 +207,25 @@ export async function remember<T>(
   }
 }
 
-function publishLiveTags(tags: readonly string[]) {
-  const topics = tags.filter(isLiveTopic);
-  if (topics.length === 0) return;
+type InvalidateLive = false | "topics" | LivePayload;
+
+function publishLive(tags: readonly string[], live: InvalidateLive) {
+  if (live === false) return;
   const run = async () => {
-    const { publishLiveTopics } = await import("@/server/live-publish");
-    await publishLiveTopics(topics);
+    const pub = await import("@/server/live-publish");
+    if (live === "topics") {
+      await pub.publishLiveTopics(tags.filter(isLiveTopic));
+      return;
+    }
+    if (live.boss) {
+      await pub.publishLiveBossPatch(live.boss);
+      return;
+    }
+    if (live.removedId) {
+      await pub.publishLiveBossRemoved(live.removedId);
+      return;
+    }
+    await pub.publishLiveTopics([live.topic]);
   };
   try {
     after(run);
@@ -176,9 +234,12 @@ function publishLiveTags(tags: readonly string[]) {
   }
 }
 
-export async function invalidateTags(tags: readonly string[]): Promise<void> {
+export async function invalidateTags(
+  tags: readonly string[],
+  live: InvalidateLive = "topics",
+): Promise<void> {
   if (tags.length === 0) return;
-  publishLiveTags(tags);
+  publishLive(tags, live);
   const redis = await getRedis();
   if (!redis) return;
 
@@ -203,5 +264,16 @@ export async function invalidateResource(...resources: string[]): Promise<void> 
   for (const resource of resources) {
     for (const tag of FALLOUT[resource] ?? [resource]) tags.add(tag);
   }
-  await invalidateTags([...tags]);
+  await invalidateTags([...tags], "topics");
+}
+
+/** Invalidate boss list cache and push a single-row live patch (no full board refetch). */
+export async function invalidateBossesWithPatch(
+  boss: NonNullable<LivePayload["boss"]>,
+): Promise<void> {
+  await invalidateTags(["bosses"], { topic: "bosses", boss });
+}
+
+export async function invalidateBossesRemoved(removedId: string): Promise<void> {
+  await invalidateTags(["bosses"], { topic: "bosses", removedId });
 }

@@ -1,5 +1,61 @@
 # Work Log
 
+## 2026-10-13 15:30 — รีทราย PATCH 409 ตอนลาก
+
+ทำอะไร/ผล: ตอน conflict ซิงก์ revision จากเซิร์ฟเวอร์แล้วลองเขียน lane เดิมอีกครั้ง (สูงสุด 1 ครั้ง) — ลด spam 409 จากแคช/live คลาด revision
+
+ไฟล์ที่เกี่ยว: `src/components/bosses/boss-table.tsx`
+
+ขั้นถัดไป: hard refresh แล้วลากข้ามคอลัมน์ — ควรเห็น 409 แล้วตามด้วย 200 ไม่ toast ถ้า retry สำเร็จ
+
+## 2026-10-13 15:25 — เก็บ P0–P2 บอร์ดบอส
+
+ทำอะไร/ผล: คิว PATCH latest-wins + expectedUpdatedAt/409, ตัด client hour-soon, watch notify ขนาน, cache v2 เช็ค gen, live patch ใบเดียวไม่ refetch ทั้งบอร์ด, staleTime ฟิลเตอร์
+
+ไฟล์ที่เกี่ยว: `boss-table.tsx`, `cache.ts`, `live.ts`, `live-publish.ts`, `live-channel.ts`, `use-live-topic.ts`, `boss-board-watch.ts`, `api/bosses/[id]/route.ts`
+
+ขั้นถัดไป: hard refresh แล้วลองลากข้ามแท็บ / ลากเร็วติดกัน
+
+## 2026-10-13 15:15 — แก้การ์ดหายตอนลาก
+
+ทำอะไร/ผล: สาเหตุหลักคือ PATCH ซ้อน + onError rollback ทั้งกระดาน / onSuccess เก่าทับของใหม่ — ใช้ seq ต่อใบ, rollback ทีละใบ, ลิสต์จากเซิร์ฟเวอร์เป็นตัวกำหนดสมาชิก, ตัด expectedUpdatedAt ตอนลาก
+
+ไฟล์ที่เกี่ยว: `src/components/bosses/boss-table.tsx`
+
+ขั้นถัดไป: hard refresh แล้วลากข้ามคอลัมน์หลายครั้งติดกัน
+
+## 2026-10-13 15:10 — บอร์ดลากเรียบ + ตัด auto PATCH client
+
+ทำอะไร/ผล: ตัด client auto-lane (server watch เป็นตัวย้าย), จำ missing ใน sessionStorage, pause live ตอนลาก/pending, concurrency `expectedUpdatedAt`, ghost ลากเรียบง่ายไม่มี ring/rotate
+
+ไฟล์ที่เกี่ยว: `boss-table.tsx`, `use-live-topic.ts`, `bosses.service.ts`, `api/bosses/[id]/route.ts`
+
+ขั้นถัดไป: รีเฟรชบอร์ด ลองลากข้ามคอลัมน์ — ไม่ควรมี PATCH 404 ของ id ผี
+
+## 2026-10-13 14:56 — แก้ PATCH บอส 404 ซ้ำ
+
+ทำอะไร/ผล: id ใน log ไม่มีใน DB แล้ว แต่ client ยัง PATCH จากแคชเก่า + restore `previous` ดึงการ์ดผีกลับ / saveLane retry ยิง 404 คู่ — ตัด missing ออกจาก board, ไม่ retry ตอนไม่พบบอส, กรองตอน rollback
+
+ไฟล์ที่เกี่ยว: `src/components/bosses/boss-table.tsx`
+
+ขั้นถัดไป: รีเฟรชบอร์ดแล้วลองลาก — ควรไม่เห็น PATCH 404 ของ id เดิม
+
+## 2026-10-13 14:30 — ตรวจโฟลบอส/คอขวด
+
+ทำอะไร/ผล: รวม watch เป็นสแกนเดียว, รองรับพลาดหน้าต่าง ready, server เคลียร์ ready→not, แก้ clockForGroup ให้ใช้ ICT และ over ชี้ช่วงถูก
+
+ไฟล์ที่เกี่ยว: `src/server/boss-board-watch.ts`, `src/lib/bosses.ts`, `src/instrumentation.ts`
+
+ขั้นถัดไป: รีสตาร์ท `npm run dev` หนึ่งครั้ง
+
+## 2026-10-13 14:20 — แก้บอทไม่แจ้ง เกิดแล้ว ตอนครบ 1 ชม.
+
+ทำอะไร/ผล: แจ้งเตือน wait→ready พึ่งแท็บบอร์ด + `after()` จึงพลาดได้ เพิ่ม server watch ย้ายเลนและส่ง Telegram ทุก 15 วินาที ปรับ notify ให้จำสำเร็จต่อนาฬิกาและรอส่งก่อนจบ PATCH — ทดสอบย้าย `board_lane` เป็น ready สำเร็จ
+
+ไฟล์ที่เกี่ยว: `src/server/boss-auto-ready.ts`, `src/server/notify/index.ts`, `src/server/notify/telegram.ts`, `src/app/api/bosses/[id]/route.ts`, `src/instrumentation.ts`
+
+ขั้นถัดไป: รีสตาร์ท `npm run dev` แล้วรอบอสครบ 1 ชม. ตรวจข้อความ 🟢 เกิดแล้ว
+
 ## 2026-10-11 19:42 — แก้ 500 ของ cities/servers/type-servers
 
 ทำอะไร/ผล: สาเหตุคือ Turbopack HMR ทำให้ `withDbRetry` จาก import ตรงใน `cache.ts` กลายเป็น `undefined` → 500 แก้ด้วย dynamic import ใน `remember` และเพิ่ม mutex ตอน reconnect พูล DB หลังรีสตาร์ท `:7000` API ทั้งสามและ board คืน 200

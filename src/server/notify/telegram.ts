@@ -110,8 +110,8 @@ export const telegramChannel: NotifyChannel = {
       return false;
     }
   },
-  async sendBossReady(notice) {
-    await postHtml(messageText(notice));
+  sendBossReady(notice) {
+    return postHtml(messageText(notice));
   },
   sendBossHourSoon(notice) {
     return postHtml(hourSoonText(notice));

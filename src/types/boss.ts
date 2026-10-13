@@ -39,4 +39,6 @@ export type UpdateBossInput = Partial<
   second?: number | null;
   /** Set only by the automatic wait → ready move. Not stored. */
   autoReady?: boolean;
+  /** Optimistic concurrency: reject when the row changed under another user. */
+  expectedUpdatedAt?: string;
 };

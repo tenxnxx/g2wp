@@ -1,7 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,22 +20,26 @@ import { compareServerName } from "@/lib/servers";
 import {
   BOSS_BOX_STATUS,
   bossElapsedMs,
-  bossHourAlmostDone,
   bossTimeGroup,
   clockForGroup,
   bossWindowCopy,
   type BossTimeGroup,
   bossLaneClock,
   formatBossTime,
+  readBoardLane,
 } from "@/lib/bosses";
 import { subscribeBossClock } from "@/components/bosses/use-boss-clock";
 import { useLiveTopic } from "@/components/live/use-live-topic";
-import { bossesService } from "@/services/bosses.service";
+import type { LivePayload } from "@/lib/live";
+import { BossApiError, bossesService } from "@/services/bosses.service";
 import { citiesService } from "@/services/cities.service";
 import { serversService } from "@/services/servers.service";
 import { typeServersService } from "@/services/type-servers.service";
 import type { Boss, BossBoardLane } from "@/types/boss";
-import { TYPE_SERVER_LABEL } from "@/types/type-server";
+import {
+  isTypeServerKind,
+  TYPE_SERVER_LABEL,
+} from "@/types/type-server";
 
 type BossTableProps = {
   onEdit: (item: Boss) => void;
@@ -58,29 +68,113 @@ type LaneWrite = {
   hour: number | null;
   minute: number | null;
   second: number | null;
-  autoReady?: boolean;
+  expectedUpdatedAt?: string;
 };
 
-type PendingMove = LaneWrite & { at: number };
+type PendingMove = LaneWrite & { at: number; seq: number };
 
+const MISSING_STORAGE_KEY = "g2:bosses:missing";
 const pendingMoves = new Map<string, PendingMove>();
-const quietMoves = new Set<string>();
-const missingBosses = new Set<string>();
-const retryAt = new Map<string, number>();
-/** Bosses whose database kept the clock after a clear, so we do not retry forever. */
-const keptClocks = new Set<string>();
-const laneInflight = new Map<string, { at: number; request: Promise<Boss> }>();
+/** Monotonic per-id token so a slow older PATCH cannot overwrite a newer drop. */
+const moveSeq = new Map<string, number>();
+/** Serializes network writes per boss — only the latest pending snapshot is sent. */
+const laneChains = new Map<string, Promise<void>>();
+/** Last server `updatedAt` per boss — never the optimistic client timestamp. */
+const serverUpdatedAt = new Map<string, string>();
+const baselineBoss = new Map<string, Boss>();
+const missingBosses = new Set<string>(loadMissingBossIds());
+
+function liveBossToBoss(row: NonNullable<LivePayload["boss"]>): Boss | null {
+  if (!isTypeServerKind(row.type)) return null;
+  return {
+    id: row.id,
+    cityId: row.cityId,
+    cityName: row.cityName,
+    serverId: row.serverId,
+    serverName: row.serverName,
+    typeServerId: row.typeServerId,
+    type: row.type,
+    hour: row.hour,
+    minute: row.minute,
+    second: row.second,
+    boardLane: readBoardLane(row.boardLane),
+    createBy: row.createBy,
+    updateBy: row.updateBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function loadMissingBossIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(MISSING_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistMissingBosses() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      MISSING_STORAGE_KEY,
+      JSON.stringify([...missingBosses]),
+    );
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function markMissingBoss(id: string) {
+  missingBosses.add(id);
+  persistMissingBosses();
+}
+
+function clearMissingBoss(id: string) {
+  if (!missingBosses.delete(id)) return;
+  persistMissingBosses();
+}
+
+function isMissingBossError(error: unknown): boolean {
+  return (
+    (error instanceof BossApiError && error.status === 404) ||
+    (error instanceof Error && error.message === "ไม่พบบอส")
+  );
+}
+
+function isConflictError(error: unknown): boolean {
+  return error instanceof BossApiError && error.status === 409;
+}
 
 async function saveLane(id: string, write: LaneWrite): Promise<Boss> {
-  const clearingClock = write.hour == null && write.minute == null && write.second == null;
+  const clearingClock =
+    write.hour == null && write.minute == null && write.second == null;
+  const payload = {
+    boardLane: write.boardLane,
+    hour: write.hour,
+    minute: write.minute,
+    second: write.second,
+    expectedUpdatedAt: write.expectedUpdatedAt,
+  };
   try {
-    return await bossesService.update(id, write);
+    return await bossesService.update(id, payload);
   } catch (error) {
-    if (!clearingClock || write.boardLane == null) throw error;
-    try {
-      return await bossesService.update(id, { boardLane: write.boardLane });
-    } catch {
+    if (isMissingBossError(error) || !clearingClock || write.boardLane == null) {
       throw error;
+    }
+    try {
+      return await bossesService.update(id, {
+        boardLane: write.boardLane,
+        expectedUpdatedAt: write.expectedUpdatedAt,
+      });
+    } catch (retryError) {
+      throw isMissingBossError(retryError) ? retryError : error;
     }
   }
 }
@@ -94,16 +188,52 @@ function sameLaneWrite(a: LaneWrite, b: LaneWrite) {
   );
 }
 
-/** A list refetch that started before a save must not roll the card backwards. */
+/**
+ * Server list is authoritative for membership.
+ * Pending local drops keep their lane/clock until that id's PATCH settles.
+ */
 function shareBossBoard(oldData: unknown, newData: unknown): Boss[] {
   if (!Array.isArray(newData)) return [];
-  if (!Array.isArray(oldData)) return newData as Boss[];
+  const incoming = (newData as Boss[]).filter((row) => !missingBosses.has(row.id));
+  if (!Array.isArray(oldData)) return incoming;
   const previous = new Map((oldData as Boss[]).map((row) => [row.id, row]));
-  return (newData as Boss[]).map((row) => {
+  return incoming.map((row) => {
+    const pending = pendingMoves.get(row.id);
     const prior = previous.get(row.id);
-    if (prior && prior.updatedAt > row.updatedAt) return prior;
+    if (pending && prior) {
+      return {
+        ...row,
+        boardLane: pending.boardLane,
+        hour: pending.hour,
+        minute: pending.minute,
+        second: pending.second,
+        updatedAt: prior.updatedAt > row.updatedAt ? prior.updatedAt : row.updatedAt,
+      };
+    }
     return row;
   });
+}
+
+function withoutMissingBosses(rows: Boss[] | undefined): Boss[] | undefined {
+  if (!rows) return rows;
+  if (missingBosses.size === 0) return rows;
+  const next = rows.filter((row) => !missingBosses.has(row.id));
+  return next.length === rows.length ? rows : next;
+}
+
+function patchBoardRow(
+  rows: Boss[] | undefined,
+  id: string,
+  patch: Partial<Boss>,
+): Boss[] | undefined {
+  if (!rows) return rows;
+  let found = false;
+  const next = rows.map((row) => {
+    if (row.id !== id) return row;
+    found = true;
+    return { ...row, ...patch };
+  });
+  return found ? next : rows;
 }
 
 function BossElapsed({
@@ -160,7 +290,6 @@ function BossElapsed({
 export function BossTable({ onEdit }: BossTableProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  useLiveTopic("bosses");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [cityId, setCityId] = useState("");
@@ -169,6 +298,55 @@ export function BossTable({ onEdit }: BossTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Boss | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTone, setDropTone] = useState<BossTimeGroup | null>(null);
+  const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement>(null);
+  const draggingIdRef = useRef<string | null>(null);
+  draggingIdRef.current = draggingId;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
+  const applyLiveBossPayload = (payload: LivePayload): boolean => {
+    if (payload.topic !== "bosses") return false;
+    if (payload.removedId) {
+      markMissingBoss(payload.removedId);
+      pendingMoves.delete(payload.removedId);
+      baselineBoss.delete(payload.removedId);
+      serverUpdatedAt.delete(payload.removedId);
+      queryClient.setQueriesData<Boss[]>(
+        { queryKey: ["bosses", "board"] },
+        (rows) => rows?.filter((row) => row.id !== payload.removedId),
+      );
+      return true;
+    }
+    if (!payload.boss) return false;
+    const boss = liveBossToBoss(payload.boss);
+    if (!boss) return false;
+    if (pendingMoves.has(boss.id)) return true;
+    clearMissingBoss(boss.id);
+    serverUpdatedAt.set(boss.id, boss.updatedAt);
+    baselineBoss.set(boss.id, boss);
+    queryClient.setQueriesData<Boss[]>(
+      { queryKey: ["bosses", "board"] },
+      (rows) => {
+        if (!rows) return rows;
+        if (!rows.some((row) => row.id === boss.id)) {
+          return withoutMissingBosses([...rows, boss]);
+        }
+        return rows.map((row) => {
+          if (row.id !== boss.id) return row;
+          if (row.updatedAt > boss.updatedAt) return row;
+          return boss;
+        });
+      },
+    );
+    return true;
+  };
+
+  useLiveTopic("bosses", {
+    pause: () => Boolean(draggingIdRef.current),
+    debounceMs: 400,
+    onPayload: applyLiveBossPayload,
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -181,28 +359,49 @@ export function BossTable({ onEdit }: BossTableProps) {
 
   const listQuery = useQuery({
     queryKey: ["bosses", "board", search, cityId, serverId, typeServerId],
-    queryFn: () =>
-      bossesService.listAll({
+    queryFn: async () => {
+      const rows = await bossesService.listAll({
         q: search,
         cityId: cityId || undefined,
         serverId: serverId || undefined,
         typeServerId: typeServerId || undefined,
-      }),
-    placeholderData: (previous) => previous,
+      });
+      const alive = new Set(rows.map((row) => row.id));
+      // Drop client-only ghosts that the API no longer returns.
+      for (const id of [...missingBosses]) {
+        if (alive.has(id)) clearMissingBoss(id);
+      }
+      for (const id of [...pendingMoves.keys()]) {
+        if (!alive.has(id)) {
+          pendingMoves.delete(id);
+          markMissingBoss(id);
+        }
+      }
+      for (const row of rows) {
+        serverUpdatedAt.set(row.id, row.updatedAt);
+        baselineBoss.set(row.id, row);
+      }
+      return rows.filter((row) => !missingBosses.has(row.id));
+    },
+    placeholderData: (previous) => withoutMissingBosses(previous),
     structuralSharing: shareBossBoard,
+    staleTime: 5_000,
   });
 
   const citiesQuery = useQuery({
     queryKey: ["cities", "filters"],
     queryFn: () => citiesService.list({ page: 1, limit: 200 }),
+    staleTime: 60_000,
   });
   const serversQuery = useQuery({
     queryKey: ["servers", "filters"],
     queryFn: () => serversService.list({ page: 1, limit: 200 }),
+    staleTime: 60_000,
   });
   const typesQuery = useQuery({
     queryKey: ["type-servers", "filters"],
     queryFn: () => typeServersService.list({ page: 1, limit: 200 }),
+    staleTime: 60_000,
   });
 
   const cityOptions = useMemo(
@@ -239,41 +438,23 @@ export function BossTable({ onEdit }: BossTableProps) {
     [typesQuery.data?.data],
   );
 
-  const items = listQuery.data ?? EMPTY_ARRAY;
+  const items = useMemo(
+    () => withoutMissingBosses(listQuery.data) ?? EMPTY_ARRAY,
+    [listQuery.data],
+  );
   const itemsRef = useRef(items);
 
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
 
-  const warnedHourSoon = useRef(new Set<string>());
-
-  useEffect(() => {
-    return subscribeBossClock((at) => {
-      for (const item of itemsRef.current) {
-        if (missingBosses.has(item.id) || item.hour == null || item.minute == null) continue;
-        if (!bossHourAlmostDone(item, at)) continue;
-        const mark = `${item.id}:${item.hour}:${item.minute}:${item.second ?? 0}`;
-        if (warnedHourSoon.current.has(mark)) continue;
-        warnedHourSoon.current.add(mark);
-        void bossesService
-          .warnHourSoon(item.id)
-          .then((result) => {
-            if (!result.sent) warnedHourSoon.current.delete(mark);
-          })
-          .catch((error: unknown) => {
-            if (error instanceof Error && error.message === "ไม่พบบอส") {
-              missingBosses.add(item.id);
-              return;
-            }
-            warnedHourSoon.current.delete(mark);
-          });
-      }
-    });
-  }, []);
+  const boardKey = ["bosses", "board", search, cityId, serverId, typeServerId] as const;
+  const boardKeyRef = useRef(boardKey);
+  boardKeyRef.current = boardKey;
 
   useEffect(() => {
     return subscribeBossClock((next) => {
+      if (draggingIdRef.current) return;
       const rows = itemsRef.current;
       setLayoutNow((prev) =>
         boardGroupKey(rows, prev) === boardGroupKey(rows, next) ? prev : next,
@@ -286,151 +467,195 @@ export function BossTable({ onEdit }: BossTableProps) {
   const recent = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "fresh");
   const upcoming = ordered.filter((item) => bossTimeGroup(item, layoutNow) === "upcoming");
 
-  const boardKey = ["bosses", "board", search, cityId, serverId, typeServerId] as const;
-  const [moveEpoch, setMoveEpoch] = useState(0);
-
-  const laneMutation = useMutation({
-    mutationFn: ({ id, ...write }: { id: string } & LaneWrite) => {
-      const key = `${id}|${write.boardLane ?? ""}|${write.hour ?? ""}|${write.minute ?? ""}`;
-      const current = laneInflight.get(key);
-      if (current && Date.now() - current.at < 1500) return current.request;
-      const request = saveLane(id, write).finally(() => {
-        const latest = laneInflight.get(key);
-        if (latest?.request === request) laneInflight.delete(key);
-      });
-      laneInflight.set(key, { at: Date.now(), request });
-      return request;
-    },
-    onMutate: ({ id, boardLane, hour, minute, second }) => {
-      const previous = queryClient.getQueryData<Boss[]>(boardKey);
-      queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
-        rows?.map((row) =>
-          row.id === id ? { ...row, boardLane, hour, minute, second } : row,
-        ),
-      );
-      return { previous };
-    },
-    onSuccess: (boss, vars) => {
-      pendingMoves.delete(boss.id);
-      if (vars.hour == null && vars.minute == null && boss.hour != null) {
-        keptClocks.add(boss.id);
-      } else if (vars.hour != null) {
-        keptClocks.delete(boss.id);
-      }
-      queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
-        rows?.map((row) => (row.id === boss.id ? boss : row)),
-      );
-    },
-    onError: (err: Error, vars, context) => {
-      pendingMoves.delete(vars.id);
-      if (err.message === "ไม่พบบอส") {
-        missingBosses.add(vars.id);
-        queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
-          rows?.filter((row) => row.id !== vars.id),
-        );
-        return;
-      }
-      if (context?.previous) queryClient.setQueryData(boardKey, context.previous);
-      if (quietMoves.has(vars.id)) {
-        quietMoves.delete(vars.id);
-        retryAt.set(vars.id, Date.now() + 3000);
-        window.setTimeout(() => setMoveEpoch((value) => value + 1), 3000);
-        return;
-      }
-      toast.error("ย้ายการ์ดไม่สำเร็จ", err.message);
-    },
-  });
-
-  const writeLaneRef = useRef<
-    (item: Boss, write: LaneWrite, quiet: boolean) => void
-  >(() => {});
+  const writeLaneRef = useRef<(item: Boss, write: LaneWrite) => void>(() => {});
 
   useEffect(() => {
-    writeLaneRef.current = (item, write, quiet) => {
+    writeLaneRef.current = (item, write) => {
+      if (missingBosses.has(item.id)) return;
+      const key = boardKeyRef.current;
+      const cached = queryClient
+        .getQueryData<Boss[]>(key)
+        ?.find((row) => row.id === item.id);
+      if (!cached) return;
+
       const current = pendingMoves.get(item.id);
-      if (current && sameLaneWrite(current, write) && Date.now() - current.at < 8000) return;
-      pendingMoves.set(item.id, { ...write, at: Date.now() });
-      if (quiet) quietMoves.add(item.id);
-      else quietMoves.delete(item.id);
-      laneMutation.mutate({ id: item.id, ...write });
-    };
-  }, [laneMutation]);
+      if (current && sameLaneWrite(current, write) && Date.now() - current.at < 8000) {
+        return;
+      }
 
-  useEffect(() => {
-    for (const item of items) {
-      const pending = pendingMoves.get(item.id);
-      if (
-        draggingId === item.id ||
-        missingBosses.has(item.id) ||
-        (pending && Date.now() - pending.at < 8000)
-      ) {
-        continue;
+      if (!baselineBoss.has(item.id)) baselineBoss.set(item.id, cached);
+      if (!serverUpdatedAt.has(item.id)) {
+        serverUpdatedAt.set(item.id, cached.updatedAt);
       }
-      const cooledUntil = retryAt.get(item.id) ?? 0;
-      if (cooledUntil > Date.now()) continue;
-      const group = bossTimeGroup(item, layoutNow);
-      const elapsed = cardElapsed(item, layoutNow);
-      const nextLane =
-        group === "upcoming" && item.boardLane !== "ready" && item.boardLane !== "not"
-          ? "ready"
-          : group === "over" && item.boardLane !== "not" && elapsed >= 0
-            ? "not"
-            : null;
-      if (
-        !keptClocks.has(item.id) &&
-        item.boardLane === "not" &&
-        item.hour != null &&
-        item.minute != null &&
-        elapsed >= 0
-      ) {
-        writeLaneRef.current(
-          item,
-          { boardLane: "not", hour: null, minute: null, second: null },
-          true,
-        );
-        continue;
-      }
-      if (!nextLane) continue;
-      if (nextLane === "ready") {
-        if (item.hour == null || item.minute == null) continue;
-        writeLaneRef.current(
-          item,
-          {
-            boardLane: "ready",
-            hour: item.hour,
-            minute: item.minute,
-            second: item.second ?? 0,
-            autoReady: true,
-          },
-          true,
-        );
-        continue;
-      }
-      writeLaneRef.current(
-        item,
-        { boardLane: "not", hour: null, minute: null, second: null },
-        true,
+
+      const seq = (moveSeq.get(item.id) ?? 0) + 1;
+      moveSeq.set(item.id, seq);
+      pendingMoves.set(item.id, {
+        ...write,
+        expectedUpdatedAt: serverUpdatedAt.get(item.id) ?? cached.updatedAt,
+        at: Date.now(),
+        seq,
+      });
+
+      queryClient.setQueryData<Boss[]>(key, (rows) =>
+        patchBoardRow(rows, item.id, {
+          boardLane: write.boardLane,
+          hour: write.hour,
+          minute: write.minute,
+          second: write.second,
+        }),
       );
-    }
-  }, [draggingId, items, layoutNow, moveEpoch]);
+
+      const prev = laneChains.get(item.id) ?? Promise.resolve();
+      const chain = prev
+        .catch(() => undefined)
+        .then(async () => {
+          // Latest-wins: after earlier writes finish, send only the newest snapshot.
+          let conflictRetries = 0;
+          while (true) {
+            const snap = pendingMoves.get(item.id);
+            if (!snap) return;
+            const runSeq = snap.seq;
+            if (runSeq !== (moveSeq.get(item.id) ?? 0)) return;
+
+            try {
+              if (missingBosses.has(item.id)) {
+                throw new BossApiError("ไม่พบบอส", 404);
+              }
+              const boss = await saveLane(item.id, {
+                boardLane: snap.boardLane,
+                hour: snap.hour,
+                minute: snap.minute,
+                second: snap.second,
+                expectedUpdatedAt:
+                  serverUpdatedAt.get(item.id) ?? snap.expectedUpdatedAt,
+              });
+              if ((moveSeq.get(item.id) ?? 0) !== runSeq) {
+                serverUpdatedAt.set(boss.id, boss.updatedAt);
+                baselineBoss.set(boss.id, boss);
+                continue;
+              }
+              pendingMoves.delete(item.id);
+              clearMissingBoss(boss.id);
+              serverUpdatedAt.set(boss.id, boss.updatedAt);
+              baselineBoss.set(boss.id, boss);
+              queryClient.setQueryData<Boss[]>(boardKeyRef.current, (rows) => {
+                if (!rows) return rows;
+                if (!rows.some((row) => row.id === boss.id)) {
+                  return withoutMissingBosses([...rows, boss]);
+                }
+                return withoutMissingBosses(
+                  rows.map((row) => (row.id === boss.id ? boss : row)),
+                );
+              });
+              return;
+            } catch (error) {
+              if ((moveSeq.get(item.id) ?? 0) !== runSeq) continue;
+
+              if (isMissingBossError(error)) {
+                pendingMoves.delete(item.id);
+                markMissingBoss(item.id);
+                baselineBoss.delete(item.id);
+                serverUpdatedAt.delete(item.id);
+                queryClient.setQueryData<Boss[]>(boardKeyRef.current, (rows) =>
+                  rows?.filter((row) => row.id !== item.id),
+                );
+                return;
+              }
+
+              if (
+                isConflictError(error) &&
+                error instanceof BossApiError &&
+                error.boss
+              ) {
+                clearMissingBoss(error.boss.id);
+                serverUpdatedAt.set(error.boss.id, error.boss.updatedAt);
+                baselineBoss.set(error.boss.id, error.boss);
+                // Keep the user's intended lane; retry once with the fresh revision.
+                pendingMoves.set(item.id, {
+                  ...snap,
+                  expectedUpdatedAt: error.boss.updatedAt,
+                  at: Date.now(),
+                  seq: runSeq,
+                });
+                queryClient.setQueryData<Boss[]>(boardKeyRef.current, (rows) =>
+                  patchBoardRow(withoutMissingBosses(rows), item.id, {
+                    ...error.boss!,
+                    boardLane: snap.boardLane,
+                    hour: snap.hour,
+                    minute: snap.minute,
+                    second: snap.second,
+                  }),
+                );
+                if (conflictRetries < 1) {
+                  conflictRetries += 1;
+                  continue;
+                }
+                pendingMoves.delete(item.id);
+                queryClient.setQueryData<Boss[]>(boardKeyRef.current, (rows) =>
+                  patchBoardRow(
+                    withoutMissingBosses(rows),
+                    error.boss!.id,
+                    error.boss!,
+                  ),
+                );
+                toastRef.current.error("ย้ายการ์ดไม่สำเร็จ", error.message);
+                return;
+              }
+
+              pendingMoves.delete(item.id);
+              const baseline = baselineBoss.get(item.id);
+              if (baseline) {
+                queryClient.setQueryData<Boss[]>(boardKeyRef.current, (rows) =>
+                  patchBoardRow(rows, item.id, baseline),
+                );
+              }
+              const message =
+                error instanceof Error ? error.message : "ย้ายการ์ดไม่สำเร็จ";
+              toastRef.current.error("ย้ายการ์ดไม่สำเร็จ", message);
+              return;
+            }
+          }
+        })
+        .finally(() => {
+          if (laneChains.get(item.id) === chain) laneChains.delete(item.id);
+        });
+      laneChains.set(item.id, chain);
+    };
+  }, [queryClient]);
 
   function placeCard(id: string, tone: BossTimeGroup) {
     const now = Date.now();
     const lane = BOSS_BOX_STATUS[tone];
-    const current = items.find((item) => item.id === id);
+    const current =
+      queryClient.getQueryData<Boss[]>(boardKey)?.find((row) => row.id === id) ??
+      items.find((item) => item.id === id);
     setDraggingId(null);
     setDropTone(null);
-    if (!current || bossTimeGroup(current, now) === tone) return;
-    retryAt.delete(id);
+    if (!current || missingBosses.has(id)) return;
+    if (bossTimeGroup(current, now) === tone) return;
     const clock =
       tone === "over"
         ? { hour: null, minute: null, second: null }
         : clockForGroup(tone, now);
-    writeLaneRef.current(current, { boardLane: lane, ...clock }, false);
+    writeLaneRef.current(current, {
+      boardLane: lane,
+      ...clock,
+      expectedUpdatedAt: current.updatedAt,
+    });
   }
 
   const deleteMutation = useMutation({
     mutationFn: bossesService.remove,
+    onMutate: async (id) => {
+      markMissingBoss(id);
+      await queryClient.cancelQueries({ queryKey: ["bosses"] });
+      const previous = queryClient.getQueryData<Boss[]>(boardKey);
+      queryClient.setQueryData<Boss[]>(boardKey, (rows) =>
+        rows?.filter((row) => row.id !== id),
+      );
+      return { previous };
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["bosses"] });
       await queryClient.invalidateQueries({ queryKey: ["cities"] });
@@ -439,7 +664,11 @@ export function BossTable({ onEdit }: BossTableProps) {
       setDeleteTarget(null);
       toast.success("ลบบอสแล้ว");
     },
-    onError: (err: Error) => {
+    onError: (err: Error, id, context) => {
+      clearMissingBoss(id);
+      if (context?.previous) {
+        queryClient.setQueryData(boardKey, context.previous);
+      }
       toast.error("ลบบอสไม่สำเร็จ", err.message);
     },
   });
@@ -526,7 +755,12 @@ export function BossTable({ onEdit }: BossTableProps) {
           description="เพิ่มเมือง เซิร์ฟเวอร์ และประเภทก่อน แล้วกดเพิ่มบอส"
         />
       ) : (
-        <div className="overflow-x-auto overscroll-x-contain">
+        <div
+          data-boss-board-scroll
+          className={`overflow-x-auto overscroll-x-contain ${
+            draggingId ? "touch-none" : ""
+          }`}
+        >
           <div className="grid min-w-[960px] grid-cols-3 gap-4 p-4">
             {(
               [
@@ -546,11 +780,26 @@ export function BossTable({ onEdit }: BossTableProps) {
                 onEdit={onEdit}
                 onDelete={setDeleteTarget}
                 onDragCard={setDraggingId}
+                onDragGhost={(ghost) => {
+                  if (!ghost) {
+                    setDragGhost(null);
+                    return;
+                  }
+                  const transform = `translate3d(${ghost.x - ghost.grabX}px, ${ghost.y - ghost.grabY}px, 0)`;
+                  const node = dragGhostRef.current;
+                  if (node) node.style.transform = transform;
+                  setDragGhost((prev) =>
+                    prev?.item.id === ghost.item.id ? prev : ghost,
+                  );
+                }}
                 onDragEnd={() => {
                   setDraggingId(null);
                   setDropTone(null);
+                  setDragGhost(null);
                 }}
-                onHoverLane={setDropTone}
+                onHoverLane={(lane) => {
+                  setDropTone((prev) => (prev === lane ? prev : lane));
+                }}
                 onDropCard={(id, target) => placeCard(id, target)}
                 deletePending={deleteMutation.isPending}
               />
@@ -558,6 +807,21 @@ export function BossTable({ onEdit }: BossTableProps) {
           </div>
         </div>
       )}
+
+      {dragGhost ? (
+        <div
+          ref={dragGhostRef}
+          aria-hidden
+          className="pointer-events-none fixed top-0 left-0 z-[300] will-change-transform"
+          style={{
+            width: dragGhost.width,
+            transform: `translate3d(${dragGhost.x - dragGhost.grabX}px, ${dragGhost.y - dragGhost.grabY}px, 0)`,
+            opacity: 0.96,
+          }}
+        >
+          <BossDragGhost item={dragGhost.item} />
+        </div>
+      ) : null}
 
       <ConfirmModal
         open={Boolean(deleteTarget)}
@@ -580,6 +844,47 @@ export function BossTable({ onEdit }: BossTableProps) {
 }
 
 const BOARD_LANES = ["over", "fresh", "upcoming"] as const;
+const TOUCH_DRAG_THRESHOLD_PX = 8;
+const DRAG_SCROLL_EDGE_PX = 56;
+const DRAG_SCROLL_MAX_PX = 24;
+
+type DragGhost = {
+  item: Boss;
+  x: number;
+  y: number;
+  width: number;
+  grabX: number;
+  grabY: number;
+};
+
+function BossDragGhost({ item }: { item: Boss }) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+      <p className="truncate font-[family-name:var(--font-display)] text-lg font-semibold leading-tight tracking-tight text-[var(--ink)]">
+        {item.cityName}
+      </p>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-sm font-semibold text-[var(--ink)]">
+          {item.serverName}
+        </p>
+        <span
+          className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide ${
+            item.type === "premium"
+              ? "bg-[color-mix(in_oklab,var(--warning)_24%,var(--surface-raised))] text-[#f3d7a4]"
+              : "bg-[var(--surface-raised)] font-bold text-[var(--ink)]"
+          }`}
+        >
+          {TYPE_SERVER_LABEL[item.type]}
+        </span>
+      </div>
+      {item.hour != null && item.minute != null ? (
+        <p className="mt-2 font-medium tabular-nums text-[var(--ink)]">
+          {formatBossTime(item.hour, item.minute, item.second ?? 0)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function laneFromPoint(x: number, y: number): BossTimeGroup | null {
   for (const node of document.elementsFromPoint(x, y)) {
@@ -589,6 +894,47 @@ function laneFromPoint(x: number, y: number): BossTimeGroup | null {
     if (found) return found;
   }
   return null;
+}
+
+function scrollSpeed(distanceFromEdge: number, edge: number, max: number): number {
+  if (distanceFromEdge >= edge) return 0;
+  const t = 1 - Math.max(0, distanceFromEdge) / edge;
+  return Math.ceil(max * t * t);
+}
+
+/** Scroll board / column / page while a card is held near an edge. */
+function autoScrollDragContainers(clientX: number, clientY: number) {
+  const edge = DRAG_SCROLL_EDGE_PX;
+  const max = DRAG_SCROLL_MAX_PX;
+
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+  const left = scrollSpeed(clientX, edge, max);
+  const right = scrollSpeed(viewW - clientX, edge, max);
+  const top = scrollSpeed(clientY, edge, max);
+  const bottom = scrollSpeed(viewH - clientY, edge, max);
+  if (left || right || top || bottom) {
+    window.scrollBy(right - left, bottom - top);
+  }
+
+  const board = document.querySelector("[data-boss-board-scroll]");
+  if (board instanceof HTMLElement) {
+    const rect = board.getBoundingClientRect();
+    const boardLeft = scrollSpeed(clientX - rect.left, edge, max);
+    const boardRight = scrollSpeed(rect.right - clientX, edge, max);
+    if (boardLeft || boardRight) board.scrollLeft += boardRight - boardLeft;
+  }
+
+  for (const node of document.elementsFromPoint(clientX, clientY)) {
+    if (!(node instanceof Element)) continue;
+    const laneScroll = node.closest("[data-boss-lane-scroll]");
+    if (!(laneScroll instanceof HTMLElement)) continue;
+    const rect = laneScroll.getBoundingClientRect();
+    const laneTop = scrollSpeed(clientY - rect.top, edge, max);
+    const laneBottom = scrollSpeed(rect.bottom - clientY, edge, max);
+    if (laneTop || laneBottom) laneScroll.scrollTop += laneBottom - laneTop;
+    break;
+  }
 }
 
 function BossTimeTable({
@@ -601,6 +947,7 @@ function BossTimeTable({
   onEdit,
   onDelete,
   onDragCard,
+  onDragGhost,
   onDragEnd,
   onHoverLane,
   onDropCard,
@@ -615,6 +962,7 @@ function BossTimeTable({
   onEdit: (item: Boss) => void;
   onDelete: (item: Boss) => void;
   onDragCard: (id: string) => void;
+  onDragGhost: (ghost: DragGhost | null) => void;
   onDragEnd: () => void;
   onHoverLane: (lane: BossTimeGroup | null) => void;
   onDropCard: (id: string, lane: BossTimeGroup) => void;
@@ -640,18 +988,9 @@ function BossTimeTable({
   return (
     <section
       data-boss-lane={tone}
-      className={`${sectionClass} ${hot ? "ring-2 ring-[var(--accent)]" : ""}`}
-      onDragOver={(event) => {
-        if (!draggingId) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        onHoverLane(tone);
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        const id = event.dataTransfer.getData("text/plain") || draggingId;
-        if (id) onDropCard(id, tone);
-      }}
+      className={`${sectionClass} ${
+        hot ? "border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface-raised))]" : ""
+      }`}
     >
       <header className={`relative ${headerClass}`}>
         <h3 className="text-center font-[family-name:var(--font-display)] text-base font-semibold">
@@ -661,7 +1000,12 @@ function BossTimeTable({
           {count}
         </span>
       </header>
-      <div className="flex max-h-[34rem] min-h-36 flex-col gap-2 overflow-auto p-3">
+      <div
+        data-boss-lane-scroll
+        className={`flex max-h-[34rem] min-h-36 flex-col gap-2 overflow-auto p-3 ${
+          draggingId ? "touch-none" : ""
+        }`}
+      >
         {items.length === 0 ? (
           <p className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--line)] px-4 py-10 text-center text-sm text-[var(--ink-muted)]">
             {draggingId ? "วางการ์ดที่นี่" : "ไม่มีบอสในกลุ่มนี้"}
@@ -670,48 +1014,102 @@ function BossTimeTable({
           items.map((item) => (
             <article
               key={item.id}
-              draggable
-              onDragStart={(event) => {
-                if ((event.target as HTMLElement).closest("button")) {
-                  event.preventDefault();
-                  return;
-                }
-                event.dataTransfer.setData("text/plain", item.id);
-                event.dataTransfer.effectAllowed = "move";
-                onDragCard(item.id);
-              }}
-              onDragEnd={onDragEnd}
+              draggable={false}
               onPointerDown={(event) => {
-                if (event.pointerType === "mouse") return;
+                if (event.button !== 0) return;
                 if ((event.target as HTMLElement).closest("button")) return;
+
+                const card = event.currentTarget;
                 const pointerId = event.pointerId;
                 const cardId = item.id;
                 const startX = event.clientX;
                 const startY = event.clientY;
+                const rect = card.getBoundingClientRect();
+                const grabX = startX - rect.left;
+                const grabY = startY - rect.top;
+                const ghostWidth = rect.width;
                 let active = false;
+                let lastX = startX;
+                let lastY = startY;
+                let raf = 0;
+                const threshold =
+                  TOUCH_DRAG_THRESHOLD_PX * TOUCH_DRAG_THRESHOLD_PX;
+
+                try {
+                  card.setPointerCapture(pointerId);
+                } catch {
+                  /* older WebViews */
+                }
+
+                const publishGhost = (x: number, y: number) => {
+                  onDragGhost({
+                    item,
+                    x,
+                    y,
+                    width: ghostWidth,
+                    grabX,
+                    grabY,
+                  });
+                };
+
+                const stopAutoScroll = () => {
+                  if (raf) {
+                    cancelAnimationFrame(raf);
+                    raf = 0;
+                  }
+                };
+
+                const tickDragFrame = () => {
+                  if (!active) {
+                    raf = 0;
+                    return;
+                  }
+                  autoScrollDragContainers(lastX, lastY);
+                  onHoverLane(laneFromPoint(lastX, lastY));
+                  publishGhost(lastX, lastY);
+                  raf = requestAnimationFrame(tickDragFrame);
+                };
 
                 const finish = () => {
-                  window.removeEventListener("pointermove", onMove);
-                  window.removeEventListener("pointerup", onUp);
-                  window.removeEventListener("pointercancel", onUp);
+                  stopAutoScroll();
+                  card.removeEventListener("pointermove", onMove);
+                  card.removeEventListener("pointerup", onUp);
+                  card.removeEventListener("pointercancel", onUp);
+                  try {
+                    if (card.hasPointerCapture(pointerId)) {
+                      card.releasePointerCapture(pointerId);
+                    }
+                  } catch {
+                    /* ignore */
+                  }
                   document.body.style.removeProperty("user-select");
                   document.body.style.removeProperty("touch-action");
+                  document.body.style.removeProperty("-webkit-user-select");
+                  document.body.style.removeProperty("cursor");
+                  onDragGhost(null);
                   onDragEnd();
                 };
 
                 const onMove = (moveEvent: PointerEvent) => {
                   if (moveEvent.pointerId !== pointerId) return;
-                  const dx = moveEvent.clientX - startX;
-                  const dy = moveEvent.clientY - startY;
+                  lastX = moveEvent.clientX;
+                  lastY = moveEvent.clientY;
+                  const dx = lastX - startX;
+                  const dy = lastY - startY;
                   if (!active) {
-                    if (dx * dx + dy * dy < 64) return;
+                    if (dx * dx + dy * dy < threshold) return;
                     active = true;
                     document.body.style.userSelect = "none";
+                    document.body.style.setProperty(
+                      "-webkit-user-select",
+                      "none",
+                    );
                     document.body.style.touchAction = "none";
+                    document.body.style.cursor = "grabbing";
                     onDragCard(cardId);
+                    if (!raf) raf = requestAnimationFrame(tickDragFrame);
                   }
                   moveEvent.preventDefault();
-                  onHoverLane(laneFromPoint(moveEvent.clientX, moveEvent.clientY));
                 };
 
                 const onUp = (upEvent: PointerEvent) => {
@@ -723,15 +1121,23 @@ function BossTimeTable({
                   if (lane) onDropCard(cardId, lane);
                 };
 
-                window.addEventListener("pointermove", onMove, { passive: false });
-                window.addEventListener("pointerup", onUp);
-                window.addEventListener("pointercancel", onUp);
+                card.addEventListener("pointermove", onMove, {
+                  passive: false,
+                });
+                card.addEventListener("pointerup", onUp);
+                card.addEventListener("pointercancel", onUp);
               }}
-              className={`cursor-grab rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 active:cursor-grabbing ${
+              className={`cursor-grab select-none rounded-xl border bg-[var(--surface)] p-3 active:cursor-grabbing ${
                 draggingId === item.id
-                  ? "touch-none opacity-40"
-                  : "hover:bg-[var(--surface-hover)]"
+                  ? "touch-none border-[var(--line)] opacity-30"
+                  : "touch-pan-y border-[var(--line)] hover:bg-[var(--surface-hover)]"
               }`}
+              style={
+                {
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
+                } satisfies CSSProperties
+              }
             >
               <div className="min-w-0">
                 <p className="truncate font-[family-name:var(--font-display)] text-lg font-semibold leading-tight tracking-tight text-[var(--ink)]">

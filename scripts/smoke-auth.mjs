@@ -7,7 +7,7 @@
  *   SMOKE_BASE_URL=https://your-site.netlify.app npm run smoke:auth
  */
 
-const BASE = (process.env.SMOKE_BASE_URL || "http://localhost:7000").replace(
+const BASE = (process.env.SMOKE_BASE_URL || "http://localhost:7321").replace(
   /\/$/,
   "",
 );

@@ -4,6 +4,9 @@ import type { BossReadyNotice, NotifyChannel } from "@/server/notify/types";
 
 const channels: NotifyChannel[] = [telegramChannel];
 const CLAIM_SEC = 8;
+/** Cover the full wait+ready window so a successful send is not repeated for the same clock. */
+const READY_REMEMBER_SEC = 3 * 60 * 60;
+const HOUR_SOON_REMEMBER_SEC = 10 * 60;
 const memoryClaim = new Map<string, number>();
 let missingChannelWarned = false;
 
@@ -82,29 +85,37 @@ async function activeChannels(): Promise<NotifyChannel[] | null> {
   return active;
 }
 
-const HOUR_SOON_REMEMBER_SEC = 10 * 60;
-
-/** Tell every enabled channel. A duplicate from another open board is dropped. */
+/**
+ * Tell every enabled channel that wait → ready just happened.
+ * One successful send per boss clock; failed sends can retry.
+ */
 export async function notifyBossReady(
   bossId: string,
+  clockKey: string,
   notice: BossReadyNotice,
-): Promise<void> {
+): Promise<boolean> {
+  const doneKey = `g2:notify:boss-ready:${bossId}:${clockKey}`;
+  if (await claimed(doneKey)) return true;
+  if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
   const active = await activeChannels();
-  if (!active) return;
-  if (!(await claim(`g2:notify:boss-ready:${bossId}`, CLAIM_SEC))) return;
+  if (!active) return false;
 
-  await Promise.all(
+  const delivered = await Promise.all(
     active.map(async (channel) => {
       try {
-        await channel.sendBossReady(notice);
+        return await channel.sendBossReady(notice);
       } catch (error) {
         console.error(
           `notify ${channel.id}`,
           error instanceof Error ? error.message : "failed",
         );
+        return false;
       }
     }),
   );
+  if (!delivered.some(Boolean)) return false;
+  await remember(doneKey, READY_REMEMBER_SEC);
+  return true;
 }
 
 /** Yellow warning that รอเกิด has five minutes left. One send per stored clock. */

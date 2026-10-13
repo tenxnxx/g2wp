@@ -4,6 +4,18 @@ import { DEFAULT_PAGE_SIZE } from "@/types/pagination";
 
 const BASE = "/api/bosses";
 
+export class BossApiError extends Error {
+  status: number;
+  boss: Boss | null;
+
+  constructor(message: string, status: number, boss: Boss | null = null) {
+    super(message);
+    this.name = "BossApiError";
+    this.status = status;
+    this.boss = boss;
+  }
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -11,7 +23,15 @@ async function parseJson<T>(res: Response): Promise<T> {
       typeof data === "object" && data && "error" in data
         ? String((data as { error: unknown }).error)
         : "Request failed";
-    throw new Error(message);
+    const boss =
+      typeof data === "object" &&
+      data &&
+      "boss" in data &&
+      (data as { boss: unknown }).boss &&
+      typeof (data as { boss: unknown }).boss === "object"
+        ? ((data as { boss: Boss }).boss ?? null)
+        : null;
+    throw new BossApiError(message, res.status, boss);
   }
   return data as T;
 }
