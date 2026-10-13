@@ -787,10 +787,15 @@ export function BossTable({ onEdit }: BossTableProps) {
                   }
                   const transform = `translate3d(${ghost.x - ghost.grabX}px, ${ghost.y - ghost.grabY}px, 0)`;
                   const node = dragGhostRef.current;
-                  if (node) node.style.transform = transform;
-                  setDragGhost((prev) =>
-                    prev?.item.id === ghost.item.id ? prev : ghost,
-                  );
+                  if (node) {
+                    node.style.transform = transform;
+                    setDragGhost((prev) =>
+                      prev?.item.id === ghost.item.id ? prev : ghost,
+                    );
+                    return;
+                  }
+                  // First paint: mount ghost at the current finger position.
+                  setDragGhost(ghost);
                 }}
                 onDragEnd={() => {
                   setDraggingId(null);
@@ -1021,6 +1026,7 @@ function BossTimeTable({
 
                 const card = event.currentTarget;
                 const pointerId = event.pointerId;
+                const isTouch = event.pointerType === "touch";
                 const cardId = item.id;
                 const startX = event.clientX;
                 const startY = event.clientY;
@@ -1034,11 +1040,16 @@ function BossTimeTable({
                 let raf = 0;
                 const threshold =
                   TOUCH_DRAG_THRESHOLD_PX * TOUCH_DRAG_THRESHOLD_PX;
+                const lockedScroll: HTMLElement[] = [];
 
-                try {
-                  card.setPointerCapture(pointerId);
-                } catch {
-                  /* older WebViews */
+                // Mouse: capture on the card. Touch: window listeners only —
+                // setPointerCapture inside overflow scroll often cancels on iOS.
+                if (!isTouch) {
+                  try {
+                    card.setPointerCapture(pointerId);
+                  } catch {
+                    /* older WebViews */
+                  }
                 }
 
                 const publishGhost = (x: number, y: number) => {
@@ -1059,6 +1070,37 @@ function BossTimeTable({
                   }
                 };
 
+                const lockScrollParents = () => {
+                  for (const sel of [
+                    "[data-boss-board-scroll]",
+                    "[data-boss-lane-scroll]",
+                  ]) {
+                    document.querySelectorAll(sel).forEach((node) => {
+                      if (!(node instanceof HTMLElement)) return;
+                      lockedScroll.push(node);
+                      node.style.touchAction = "none";
+                    });
+                  }
+                  document.body.style.userSelect = "none";
+                  document.body.style.setProperty(
+                    "-webkit-user-select",
+                    "none",
+                  );
+                  document.body.style.touchAction = "none";
+                  document.body.style.cursor = "grabbing";
+                };
+
+                const unlockScrollParents = () => {
+                  for (const node of lockedScroll) {
+                    node.style.removeProperty("touch-action");
+                  }
+                  lockedScroll.length = 0;
+                  document.body.style.removeProperty("user-select");
+                  document.body.style.removeProperty("touch-action");
+                  document.body.style.removeProperty("-webkit-user-select");
+                  document.body.style.removeProperty("cursor");
+                };
+
                 const tickDragFrame = () => {
                   if (!active) {
                     raf = 0;
@@ -1072,20 +1114,19 @@ function BossTimeTable({
 
                 const finish = () => {
                   stopAutoScroll();
-                  card.removeEventListener("pointermove", onMove);
-                  card.removeEventListener("pointerup", onUp);
-                  card.removeEventListener("pointercancel", onUp);
-                  try {
-                    if (card.hasPointerCapture(pointerId)) {
-                      card.releasePointerCapture(pointerId);
+                  window.removeEventListener("pointermove", onMove, true);
+                  window.removeEventListener("pointerup", onUp, true);
+                  window.removeEventListener("pointercancel", onUp, true);
+                  if (!isTouch) {
+                    try {
+                      if (card.hasPointerCapture(pointerId)) {
+                        card.releasePointerCapture(pointerId);
+                      }
+                    } catch {
+                      /* ignore */
                     }
-                  } catch {
-                    /* ignore */
                   }
-                  document.body.style.removeProperty("user-select");
-                  document.body.style.removeProperty("touch-action");
-                  document.body.style.removeProperty("-webkit-user-select");
-                  document.body.style.removeProperty("cursor");
+                  unlockScrollParents();
                   onDragGhost(null);
                   onDragEnd();
                 };
@@ -1099,16 +1140,12 @@ function BossTimeTable({
                   if (!active) {
                     if (dx * dx + dy * dy < threshold) return;
                     active = true;
-                    document.body.style.userSelect = "none";
-                    document.body.style.setProperty(
-                      "-webkit-user-select",
-                      "none",
-                    );
-                    document.body.style.touchAction = "none";
-                    document.body.style.cursor = "grabbing";
+                    lockScrollParents();
                     onDragCard(cardId);
+                    publishGhost(lastX, lastY);
                     if (!raf) raf = requestAnimationFrame(tickDragFrame);
                   }
+                  // Block page/lane scroll while dragging (esp. touch).
                   moveEvent.preventDefault();
                 };
 
@@ -1121,19 +1158,23 @@ function BossTimeTable({
                   if (lane) onDropCard(cardId, lane);
                 };
 
-                card.addEventListener("pointermove", onMove, {
+                window.addEventListener("pointermove", onMove, {
                   passive: false,
+                  capture: true,
                 });
-                card.addEventListener("pointerup", onUp);
-                card.addEventListener("pointercancel", onUp);
+                window.addEventListener("pointerup", onUp, { capture: true });
+                window.addEventListener("pointercancel", onUp, {
+                  capture: true,
+                });
               }}
-              className={`cursor-grab select-none rounded-xl border bg-[var(--surface)] p-3 active:cursor-grabbing ${
+              className={`touch-none cursor-grab select-none rounded-xl border bg-[var(--surface)] p-3 active:cursor-grabbing ${
                 draggingId === item.id
-                  ? "touch-none border-[var(--line)] opacity-30"
-                  : "touch-pan-y border-[var(--line)] hover:bg-[var(--surface-hover)]"
+                  ? "border-[var(--line)] opacity-30"
+                  : "border-[var(--line)] hover:bg-[var(--surface-hover)]"
               }`}
               style={
                 {
+                  touchAction: "none",
                   WebkitUserSelect: "none",
                   WebkitTouchCallout: "none",
                 } satisfies CSSProperties

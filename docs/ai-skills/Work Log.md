@@ -1,5 +1,13 @@
 # Work Log
 
+## 2026-10-13 16:45 — แก้ลากการ์ดบอสบนมือถือ
+
+ทำอะไร/ผล: ตัด `touch-pan-y` ที่แย่ง gesture, ฟัง pointer ที่ window (ไม่ capture บน iOS), ล็อก touch-action ตอนลาก — การ์ดขยับตามนิ้วได้
+
+ไฟล์ที่เกี่ยว: `src/components/bosses/boss-table.tsx`
+
+ขั้นถัดไป: ทดสอบบนมือถือจริง ลากข้ามคอลัมน์
+
 ## 2026-10-13 16:05 — เพิ่ม Discord webhook แจ้งเตือนคู่ Telegram
 
 ทำอะไร/ผล: ช่อง `discord` ส่ง embed 🟡/🟢 ชุดเดียวกับ Telegram, remember แยกต่อช่องเพื่อ retry ช่องที่พลาด, env `DISCORD_WEBHOOK_URL`
