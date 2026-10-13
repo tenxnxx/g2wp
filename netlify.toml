@@ -1,5 +1,7 @@
+# Legacy Netlify config — production runs on Render (see render.yaml / README).
+# Kept only if someone still builds on Netlify locally.
+
 [build]
-  # Requires DIRECT_URL (and DATABASE_URL) in Netlify env for migrate deploy
   command = "npm run build:release"
   publish = ".next"
 

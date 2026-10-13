@@ -56,7 +56,20 @@ function hourSoonText(notice: BossReadyNotice): string {
   return ["🟡 <b>อีก 5 นาทีจะครบ 1 ชั่วโมง</b>", ...cardLines(notice)].join("\n\n");
 }
 
-async function postHtml(text: string): Promise<boolean> {
+/** Same-chat Telegram limit is ~1 msg/s — serialize sends with a small gap. */
+const SEND_GAP_MS = 350;
+let sendQueue: Promise<void> = Promise.resolve();
+
+function enqueueSend(task: () => Promise<boolean>): Promise<boolean> {
+  const run = sendQueue.then(task, task);
+  sendQueue = run.then(
+    () => new Promise((resolve) => setTimeout(resolve, SEND_GAP_MS)),
+    () => new Promise((resolve) => setTimeout(resolve, SEND_GAP_MS)),
+  );
+  return run;
+}
+
+async function postHtmlNow(text: string): Promise<boolean> {
   const token = botToken();
   if (!token) return false;
 
@@ -94,6 +107,10 @@ async function postHtml(text: string): Promise<boolean> {
     console.error("telegram notify failed");
     return false;
   }
+}
+
+async function postHtml(text: string): Promise<boolean> {
+  return enqueueSend(() => postHtmlNow(text));
 }
 
 export const telegramChannel: NotifyChannel = {

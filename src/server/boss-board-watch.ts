@@ -44,135 +44,159 @@ async function loadTimedBosses() {
   });
 }
 
+async function notifyAllHourSoon(bosses: TimedBoss[]): Promise<void> {
+  for (const boss of bosses) {
+    try {
+      await notifyBossHourSoon(boss.id, clockKey(boss), noticeOf(boss));
+    } catch (error: unknown) {
+      console.error(
+        "boss hour-soon",
+        error instanceof Error ? error.message : "failed",
+      );
+    }
+  }
+}
+
+async function notifyAllReady(bosses: TimedBoss[]): Promise<void> {
+  for (const boss of bosses) {
+    try {
+      await notifyBossReady(boss.id, clockKey(boss), noticeOf(boss));
+    } catch (error: unknown) {
+      console.error(
+        "boss ready",
+        error instanceof Error ? error.message : "failed",
+      );
+    }
+  }
+}
+
 /**
  * One scan for: yellow 5-minute warning, wait→ready (+ 🟢 notify),
  * missed ready window (notify then clear), and ready→not (no notify).
- * Notifies run in parallel; DB updates are batched with Promise.all.
  */
 async function scanBossBoard(): Promise<void> {
-  if (scanning) return;
-  scanning = true;
+  const rows = await loadTimedBosses();
+  const now = Date.now();
   let boardChanged = false;
-  try {
-    const rows = await loadTimedBosses();
-    const now = Date.now();
 
-    const hourSoon: TimedBoss[] = [];
-    const promote: TimedBoss[] = [];
-    const missed: TimedBoss[] = [];
-    const clearReady: TimedBoss[] = [];
+  const hourSoon: TimedBoss[] = [];
+  const promote: TimedBoss[] = [];
+  const readyNotify: TimedBoss[] = [];
+  const missed: TimedBoss[] = [];
+  const clearReady: TimedBoss[] = [];
 
-    for (const row of rows) {
-      const boss = asTimedBoss(row);
-      if (!boss) continue;
-      const lane = readBoardLane(boss.boardLane);
-      const timed = {
-        hour: boss.hour,
-        minute: boss.minute,
-        second: boss.second,
-        boardLane: lane,
-      };
-      const group = bossTimeGroup(timed, now);
+  for (const row of rows) {
+    const boss = asTimedBoss(row);
+    if (!boss) continue;
+    const lane = readBoardLane(boss.boardLane);
+    const timed = {
+      hour: boss.hour,
+      minute: boss.minute,
+      second: boss.second,
+      boardLane: lane,
+    };
+    const group = bossTimeGroup(timed, now);
 
-      if (bossHourAlmostDone(timed, now)) hourSoon.push(boss);
-      if (lane === "not") continue;
+    if (bossHourAlmostDone(timed, now)) hourSoon.push(boss);
+    if (lane === "not") continue;
 
-      if (lane !== "ready") {
-        if (group === "fresh") continue;
-        if (group === "upcoming") promote.push(boss);
-        else missed.push(boss);
-        continue;
-      }
-
-      if (group === "over") clearReady.push(boss);
+    if (lane !== "ready") {
+      if (group === "fresh") continue;
+      if (group === "upcoming") promote.push(boss);
+      else missed.push(boss);
+      continue;
     }
 
-    await Promise.all(
-      hourSoon.map((boss) =>
-        notifyBossHourSoon(boss.id, clockKey(boss), noticeOf(boss)).catch(
-          (error: unknown) => {
-            console.error(
-              "boss hour-soon",
-              error instanceof Error ? error.message : "failed",
-            );
-          },
-        ),
-      ),
-    );
+    // Already in เกิดแล้ว: keep trying 🟢 until Redis remembers a successful send.
+    if (group === "upcoming") readyNotify.push(boss);
+    if (group === "over") clearReady.push(boss);
+  }
 
-    const promoted = await Promise.all(
-      promote.map(async (boss) => {
-        const updated = await prisma.boss.updateMany({
-          where: {
-            id: boss.id,
-            OR: [{ boardLane: null }, { boardLane: "wait" }],
-          },
-          data: { boardLane: "ready" },
-        });
-        return updated.count > 0 ? boss : null;
-      }),
-    );
-    const promotedRows = promoted.filter((row): row is TimedBoss => row != null);
-    if (promotedRows.length > 0) boardChanged = true;
+  await notifyAllHourSoon(hourSoon);
 
-    await Promise.all(
-      promotedRows.map((boss) =>
-        notifyBossReady(boss.id, clockKey(boss), noticeOf(boss)).catch(
-          (error: unknown) => {
-            console.error(
-              "boss ready",
-              error instanceof Error ? error.message : "failed",
-            );
-          },
-        ),
-      ),
-    );
+  const promoted = await Promise.all(
+    promote.map(async (boss) => {
+      const updated = await prisma.boss.updateMany({
+        where: {
+          id: boss.id,
+          OR: [{ boardLane: null }, { boardLane: "wait" }],
+        },
+        data: { boardLane: "ready" },
+      });
+      return updated.count > 0 ? boss : null;
+    }),
+  );
+  const promotedRows = promoted.filter((row): row is TimedBoss => row != null);
+  if (promotedRows.length > 0) boardChanged = true;
 
-    const missedCleared = await Promise.all(
-      missed.map(async (boss) => {
-        const sent = await notifyBossReady(
-          boss.id,
-          clockKey(boss),
-          noticeOf(boss),
-        );
-        if (!sent) return false;
-        const cleared = await prisma.boss.updateMany({
-          where: {
-            id: boss.id,
-            OR: [{ boardLane: null }, { boardLane: "wait" }],
-          },
-          data: {
-            boardLane: "not",
-            hour: null,
-            minute: null,
-            second: null,
-          },
-        });
-        return cleared.count > 0;
-      }),
-    );
-    if (missedCleared.some(Boolean)) boardChanged = true;
+  const readyNotifyIds = new Set(readyNotify.map((boss) => boss.id));
+  const readyToNotify = [
+    ...promotedRows.filter((boss) => !readyNotifyIds.has(boss.id)),
+    ...readyNotify,
+  ];
+  await notifyAllReady(readyToNotify);
 
-    const readyCleared = await Promise.all(
-      clearReady.map(async (boss) => {
-        const cleared = await prisma.boss.updateMany({
-          where: { id: boss.id, boardLane: "ready" },
-          data: {
-            boardLane: "not",
-            hour: null,
-            minute: null,
-            second: null,
-          },
-        });
-        return cleared.count > 0;
-      }),
-    );
-    if (readyCleared.some(Boolean)) boardChanged = true;
+  const missedCleared = await Promise.all(
+    missed.map(async (boss) => {
+      const sent = await notifyBossReady(
+        boss.id,
+        clockKey(boss),
+        noticeOf(boss),
+      );
+      if (!sent) return false;
+      const cleared = await prisma.boss.updateMany({
+        where: {
+          id: boss.id,
+          OR: [{ boardLane: null }, { boardLane: "wait" }],
+        },
+        data: {
+          boardLane: "not",
+          hour: null,
+          minute: null,
+          second: null,
+        },
+      });
+      return cleared.count > 0;
+    }),
+  );
+  if (missedCleared.some(Boolean)) boardChanged = true;
 
-    if (boardChanged) await invalidateResource("bosses");
+  const readyCleared = await Promise.all(
+    clearReady.map(async (boss) => {
+      const cleared = await prisma.boss.updateMany({
+        where: { id: boss.id, boardLane: "ready" },
+        data: {
+          boardLane: "not",
+          hour: null,
+          minute: null,
+          second: null,
+        },
+      });
+      return cleared.count > 0;
+    }),
+  );
+  if (readyCleared.some(Boolean)) boardChanged = true;
+
+  if (boardChanged) await invalidateResource("bosses");
+}
+
+/** Cron / scheduled ping entry. Skips when another scan is already running. */
+export async function runBossBoardScan(): Promise<"ran" | "busy"> {
+  if (scanning) return "busy";
+  scanning = true;
+  try {
+    await scanBossBoard();
+    return "ran";
   } finally {
     scanning = false;
   }
+}
+
+function shouldUseLocalInterval(): boolean {
+  if (process.env.BOSS_BOARD_WATCH_INTERVAL === "0") return false;
+  // Serverless hosts freeze timers; long-lived hosts (Render Web Service, local) keep the loop.
+  if (process.env.NETLIFY === "true") return false;
+  return true;
 }
 
 export function startBossBoardWatch(): void {
@@ -180,8 +204,17 @@ export function startBossBoardWatch(): void {
   if (g.bossBoardWatchStarted) return;
   g.bossBoardWatchStarted = true;
 
+  void runBossBoardScan().catch((error: unknown) => {
+    console.error(
+      "boss board watch",
+      error instanceof Error ? error.message : "failed",
+    );
+  });
+
+  if (!shouldUseLocalInterval()) return;
+
   const timer = setInterval(() => {
-    void scanBossBoard().catch((error: unknown) => {
+    void runBossBoardScan().catch((error: unknown) => {
       console.error(
         "boss board watch",
         error instanceof Error ? error.message : "failed",
@@ -189,10 +222,4 @@ export function startBossBoardWatch(): void {
     });
   }, 15_000);
   timer.unref();
-  void scanBossBoard().catch((error: unknown) => {
-    console.error(
-      "boss board watch",
-      error instanceof Error ? error.message : "failed",
-    );
-  });
 }

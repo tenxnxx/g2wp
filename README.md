@@ -2,7 +2,7 @@
 
 แอดมินจัดการสมาชิกแคลน — สมาชิก, กลุ่ม, ตัวละคร, พฤติกรรม, รายงานสาธารณะ, อีเวนต์เช็คชื่อ, ไอเท็ม/ตู้เซฟ
 
-Stack: Next.js 16 · React 19 · Prisma 7 · Supabase Auth/Postgres · TanStack Query · Tailwind 4 · Netlify
+Stack: Next.js 16 · React 19 · Prisma 7 · Supabase Auth/Postgres · TanStack Query · Tailwind 4 · Render
 
 ## Dev
 
@@ -35,19 +35,24 @@ npm run dev                  # http://localhost:7321
 - ผู้ใช้ปกติ: ล็อกอินแล้วเปิดได้แค่ `/` (แดชบอร์ดอ่านอย่างเดียว)
 - สาธารณะ: `/report`, `/api/public/*`, `/login`
 
-## Deploy (Netlify)
+## Deploy (Render)
+
+Web Service (Node) — long-lived process so the boss-board watch (`setInterval` 15s) keeps running.
 
 ```bash
-npm run build:release   # migrate deploy + generate + next build
+# Build command
+npm ci && npm run build:release
+
+# Start command
+npm start   # listens on $PORT (Render) or 7321 locally
 ```
 
-ตั้ง env บน Netlify ให้ครบ รวม `ADMIN_EMAILS` และ `DIRECT_URL`
+ตั้ง env บน Render ให้ครบอย่างน้อย: `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_*`, `ADMIN_EMAILS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `REDIS_URL` (แนะนำ)
 
-ตัวอย่างตั้งค่า (หลัง `netlify link`):
-
-```bash
-npx netlify env:set ADMIN_EMAILS "tenx@g2wp.com"
-```
+**บอทแจ้งเตือน:** บน Web Service ที่ไม่ sleep ไม่ต้องมี Cron — `instrumentation` สแกนเองทุก 15 วินาที  
+ถ้าใช้ฟรีเทียร์ที่ sleep หรืออยาก backup ให้สร้าง Render Cron Job ยิง  
+`POST https://YOUR_SERVICE.onrender.com/api/internal/boss-board-scan`  
+พร้อม `Authorization: Bearer $CRON_SECRET` ทุกนาที (ดู `render.yaml`)
 
 ## Scripts
 
@@ -66,7 +71,7 @@ npx netlify env:set ADMIN_EMAILS "tenx@g2wp.com"
 npm run smoke:auth
 
 # production
-SMOKE_BASE_URL=https://YOUR_SITE.netlify.app npm run smoke:auth
+SMOKE_BASE_URL=https://YOUR_SERVICE.onrender.com npm run smoke:auth
 ```
 
 ## Security notes

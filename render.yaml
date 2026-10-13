@@ -1,0 +1,49 @@
+# Render Blueprint — adjust name/plan in the dashboard if needed.
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: g2wp
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build:release
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  # Optional backup when the web service may sleep. Hits the scan API every minute.
+  - type: cron
+    name: g2wp-boss-board-watch
+    runtime: node
+    plan: starter
+    schedule: "* * * * *"
+    buildCommand: "echo cron"
+    startCommand: |
+      node -e "const u=process.env.BOSS_SCAN_URL;const s=process.env.CRON_SECRET;if(!u||!s){console.error('missing BOSS_SCAN_URL or CRON_SECRET');process.exit(1)}fetch(u,{method:'POST',headers:{Authorization:'Bearer '+s},signal:AbortSignal.timeout(55000)}).then(async r=>{const t=await r.text();console.log(r.status,t);if(!r.ok)process.exit(1)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: BOSS_SCAN_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false

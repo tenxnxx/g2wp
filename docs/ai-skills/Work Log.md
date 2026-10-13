@@ -1,5 +1,29 @@
 # Work Log
 
+## 2026-10-13 15:55 — ปรับ deploy เป็น Render
+
+ทำอะไร/ผล: `npm start` ใช้ `$PORT`, ลบ Netlify scheduled function, เพิ่ม `render.yaml` + README สำหรับ Web Service / Cron backup — บน Render ที่ค้าง process บอทวิ่งจาก interval 15s ไม่ต้องพึ่ง Netlify
+
+ไฟล์ที่เกี่ยว: `package.json`, `render.yaml`, `README.md`, `.env.example`, `netlify.toml`
+
+ขั้นถัดไป: บน Render ยืนยัน Start Command = `npm start` และ service ไม่ sleep (หรือตั้ง Cron + CRON_SECRET)
+
+## 2026-10-13 15:50 — Netlify cron + throttle Telegram
+
+ทำอะไร/ผล: API `/api/internal/boss-board-scan` + `CRON_SECRET`, scheduled function ทุกนาที, ปิด setInterval บน NETLIFY, คิวส่ง Telegram หน่วง 350ms, retry ready คงไว้
+
+ไฟล์ที่เกี่ยว: `boss-board-watch.ts`, `cron-auth.ts`, `api/internal/boss-board-scan`, `netlify/functions/boss-board-watch.mts`, `telegram.ts`, `middleware.ts`, `.env.example`
+
+ขั้นถัดไป: ตั้ง `CRON_SECRET` บน Netlify แล้ว deploy — ดู log ฟังก์ชัน `boss-board-watch` ทุกนาที
+
+## 2026-10-13 15:45 — ตรวจบอท hour-soon / เกิดแล้ว
+
+ทำอะไร/ผล: เงื่อนไขเวลา ICT ถูกต้อง (≤5 นาที → 🟡, ครบ 1ชม → ย้าย ready + 🟢), dedupe Redis แยก key; แก้บัค promote แล้ว notify พลาดไม่ retry — ตอนนี้ยิงซ้ำตอน lane=ready จนกว่าส่งสำเร็จ
+
+ไฟล์ที่เกี่ยว: `boss-board-watch.ts`, `bosses.ts`, `notify/index.ts`
+
+ขั้นถัดไป: บน Netlify ยืนยันว่า instrumentation + setInterval ยังวิ่ง (serverless อาจไม่ค้าง timer) — ถ้าเงียบต้องใช้ scheduled ping
+
 ## 2026-10-13 15:30 — รีทราย PATCH 409 ตอนลาก
 
 ทำอะไร/ผล: ตอน conflict ซิงก์ revision จากเซิร์ฟเวอร์แล้วลองเขียน lane เดิมอีกครั้ง (สูงสุด 1 ครั้ง) — ลด spam 409 จากแคช/live คลาด revision

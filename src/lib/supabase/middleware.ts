@@ -77,6 +77,7 @@ export async function updateSession(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/report" ||
     pathname.startsWith("/api/public/") ||
+    pathname.startsWith("/api/internal/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
