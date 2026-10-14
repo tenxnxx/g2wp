@@ -1,5 +1,13 @@
 # Work Log
 
+## 2026-10-14 11:40 — แก้ Discord ไม่แจ้งคู่ Telegram
+
+ทำอะไร/ผล: ส่งช่องทีละช่อง (TG→Discord), retry ตอน 429, ตัด quote ใน webhook URL, log สถานะช่องตอนสตาร์ท watch, migrate legacy Redis key ให้ Discord ยังยิงได้
+
+ไฟล์ที่เกี่ยว: `notify/discord.ts`, `notify/index.ts`, `boss-board-watch.ts`
+
+ขั้นถัดไป: ตั้ง `DISCORD_WEBHOOK_URL` บน Render แล้ว redeploy — ดู log `boss board watch notify discord:on`
+
 ## 2026-10-13 16:45 — แก้ลากการ์ดบอสบนมือถือ
 
 ทำอะไร/ผล: ตัด `touch-pan-y` ที่แย่ง gesture, ฟัง pointer ที่ window (ไม่ capture บน iOS), ล็อก touch-action ตอนลาก — การ์ดขยับตามนิ้วได้

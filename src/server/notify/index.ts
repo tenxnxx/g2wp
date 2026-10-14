@@ -10,6 +10,7 @@ const READY_REMEMBER_SEC = 3 * 60 * 60;
 const HOUR_SOON_REMEMBER_SEC = 10 * 60;
 const memoryClaim = new Map<string, number>();
 let missingChannelWarned = false;
+let channelStatusLogged = false;
 
 async function claim(key: string, seconds: number): Promise<boolean> {
   const redis = await getRedis();
@@ -63,15 +64,67 @@ async function remember(key: string, seconds: number): Promise<void> {
   memoryClaim.set(key, Date.now() + seconds * 1000);
 }
 
+function channelDoneKey(
+  kind: "boss-ready" | "boss-hour-soon",
+  bossId: string,
+  clockKey: string,
+  channelId: string,
+): string {
+  return `g2:notify:${kind}:${bossId}:${clockKey}:${channelId}`;
+}
+
+/** Pre-Discord key — counted as Telegram-only so Discord can still send. */
+function legacyDoneKey(
+  kind: "boss-ready" | "boss-hour-soon",
+  bossId: string,
+  clockKey: string,
+): string {
+  return `g2:notify:${kind}:${bossId}:${clockKey}`;
+}
+
+async function channelAlreadyDone(
+  kind: "boss-ready" | "boss-hour-soon",
+  bossId: string,
+  clockKey: string,
+  channelId: string,
+  rememberSec: number,
+): Promise<boolean> {
+  const doneKey = channelDoneKey(kind, bossId, clockKey, channelId);
+  if (await claimed(doneKey)) return true;
+
+  if (channelId === "telegram" && (await claimed(legacyDoneKey(kind, bossId, clockKey)))) {
+    await remember(doneKey, rememberSec);
+    return true;
+  }
+  return false;
+}
+
 async function activeChannels(): Promise<NotifyChannel[] | null> {
   const active = [];
+  const skipped: string[] = [];
   let enabled = false;
   for (const channel of channels) {
-    if (!channel.enabled()) continue;
+    if (!channel.enabled()) {
+      skipped.push(`${channel.id}:off`);
+      continue;
+    }
     enabled = true;
-    if (!(await channel.available())) continue;
+    if (!(await channel.available())) {
+      skipped.push(`${channel.id}:unavailable`);
+      continue;
+    }
     active.push(channel);
   }
+
+  if (!channelStatusLogged) {
+    channelStatusLogged = true;
+    console.log(
+      "notify channels",
+      active.map((channel) => channel.id).join(",") || "(none)",
+      skipped.length ? `skipped=${skipped.join(",")}` : "",
+    );
+  }
+
   if (active.length === 0) {
     if (!missingChannelWarned) {
       missingChannelWarned = true;
@@ -96,27 +149,46 @@ async function deliverAll(
   const active = await activeChannels();
   if (!active) return false;
 
-  const results = await Promise.all(
-    active.map(async (channel) => {
-      const doneKey = `g2:notify:${kind}:${bossId}:${clockKey}:${channel.id}`;
-      if (await claimed(doneKey)) return true;
-      if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) return false;
-      try {
-        const ok = await send(channel);
-        if (ok) await remember(doneKey, rememberSec);
-        return ok;
-      } catch (error) {
-        console.error(
-          `notify ${channel.id}`,
-          error instanceof Error ? error.message : "failed",
-        );
-        return false;
+  // Sequential: Telegram then Discord — avoids Discord 429 when both fire at once,
+  // and guarantees Discord is attempted even if Telegram already remembered.
+  const results: { id: string; ok: boolean }[] = [];
+  for (const channel of active) {
+    const doneKey = channelDoneKey(kind, bossId, clockKey, channel.id);
+    if (await channelAlreadyDone(kind, bossId, clockKey, channel.id, rememberSec)) {
+      results.push({ id: channel.id, ok: true });
+      continue;
+    }
+    if (!(await claim(`${doneKey}:lock`, CLAIM_SEC))) {
+      results.push({ id: channel.id, ok: false });
+      continue;
+    }
+    try {
+      const ok = await send(channel);
+      if (ok) await remember(doneKey, rememberSec);
+      else {
+        console.error(`notify ${channel.id} ${kind} failed`, bossId, clockKey);
       }
-    }),
-  );
+      results.push({ id: channel.id, ok });
+    } catch (error) {
+      console.error(
+        `notify ${channel.id}`,
+        error instanceof Error ? error.message : "failed",
+      );
+      results.push({ id: channel.id, ok: false });
+    }
+  }
+
+  const failed = results.filter((row) => !row.ok).map((row) => row.id);
+  if (failed.length > 0) {
+    console.error(
+      `notify ${kind} incomplete`,
+      bossId,
+      `failed=${failed.join(",")}`,
+    );
+  }
 
   // True only when every active channel delivered (or was already remembered).
-  return results.every(Boolean);
+  return results.every((row) => row.ok);
 }
 
 /**
@@ -149,5 +221,18 @@ export async function notifyBossHourSoon(
     clockKey,
     HOUR_SOON_REMEMBER_SEC,
     (channel) => channel.sendBossHourSoon(notice),
+  );
+}
+
+/** For ops / startup logs — which outbound channels are usable. */
+export async function listNotifyChannelStatus(): Promise<
+  { id: string; enabled: boolean; available: boolean }[]
+> {
+  return Promise.all(
+    channels.map(async (channel) => ({
+      id: channel.id,
+      enabled: channel.enabled(),
+      available: channel.enabled() ? await channel.available() : false,
+    })),
   );
 }

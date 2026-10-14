@@ -7,7 +7,11 @@ import {
 } from "@/lib/bosses";
 import { invalidateResource } from "@/lib/cache";
 import { prisma } from "@/lib/db";
-import { notifyBossHourSoon, notifyBossReady } from "@/server/notify";
+import {
+  listNotifyChannelStatus,
+  notifyBossHourSoon,
+  notifyBossReady,
+} from "@/server/notify";
 import { TYPE_SERVER_LABEL } from "@/types/type-server";
 
 type WatchGlobal = typeof globalThis & {
@@ -203,6 +207,22 @@ export function startBossBoardWatch(): void {
   const g = globalThis as WatchGlobal;
   if (g.bossBoardWatchStarted) return;
   g.bossBoardWatchStarted = true;
+
+  void listNotifyChannelStatus()
+    .then((rows) => {
+      console.log(
+        "boss board watch notify",
+        rows
+          .map(
+            (row) =>
+              `${row.id}:${row.enabled ? (row.available ? "on" : "bad-config") : "off"}`,
+          )
+          .join(" "),
+      );
+    })
+    .catch(() => {
+      /* ignore */
+    });
 
   void runBossBoardScan().catch((error: unknown) => {
     console.error(

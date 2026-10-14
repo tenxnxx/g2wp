@@ -1,17 +1,24 @@
 import type { BossReadyNotice, NotifyChannel } from "@/server/notify/types";
 
+/** Normalize env (Render sometimes wraps values in quotes). */
 function webhookUrl(): string {
-  return process.env.DISCORD_WEBHOOK_URL?.trim() ?? "";
+  const raw =
+    process.env.DISCORD_WEBHOOK_URL?.trim() ||
+    process.env.DISCORD_BOSS_WEBHOOK_URL?.trim() ||
+    "";
+  return raw.replace(/^['"]|['"]$/g, "").trim();
 }
 
 function isDiscordWebhook(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return (
-      (parsed.hostname === "discord.com" ||
-        parsed.hostname === "discordapp.com") &&
-      parsed.pathname.startsWith("/api/webhooks/")
-    );
+    const host = parsed.hostname.toLowerCase();
+    const okHost =
+      host === "discord.com" ||
+      host === "discordapp.com" ||
+      host.endsWith(".discord.com") ||
+      host.endsWith(".discordapp.com");
+    return okHost && parsed.pathname.includes("/api/webhooks/");
   } catch {
     return false;
   }
@@ -55,6 +62,7 @@ function hourSoonText(notice: BossReadyNotice): string {
 /** Same-channel Discord webhook limit — serialize sends with a small gap. */
 const SEND_GAP_MS = 350;
 let sendQueue: Promise<void> = Promise.resolve();
+let invalidWebhookWarned = false;
 
 function enqueueSend(task: () => Promise<boolean>): Promise<boolean> {
   const run = sendQueue.then(task, task);
@@ -67,10 +75,22 @@ function enqueueSend(task: () => Promise<boolean>): Promise<boolean> {
 
 async function postContentNow(content: string): Promise<boolean> {
   const url = webhookUrl();
-  if (!url || !isDiscordWebhook(url)) return false;
+  if (!url || !isDiscordWebhook(url)) {
+    if (url && !invalidWebhookWarned) {
+      invalidWebhookWarned = true;
+      console.error(
+        "discord notify skipped: DISCORD_WEBHOOK_URL is set but not a valid Discord webhook URL",
+      );
+    }
+    return false;
+  }
 
   try {
-    const response = await fetch(url, {
+    // wait=true so Discord returns JSON errors instead of empty 204-only failures.
+    const endpoint = url.includes("?")
+      ? `${url}&wait=true`
+      : `${url}?wait=true`;
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -82,6 +102,35 @@ async function postContentNow(content: string): Promise<boolean> {
     });
 
     if (response.ok || response.status === 204) return true;
+
+    if (response.status === 429) {
+      const body = (await response.json().catch(() => null)) as {
+        retry_after?: unknown;
+      } | null;
+      const retryAfter =
+        typeof body?.retry_after === "number"
+          ? body.retry_after
+          : Number(response.headers.get("retry-after") ?? 1);
+      const waitMs = Math.min(
+        5_000,
+        Math.max(350, Math.ceil((Number.isFinite(retryAfter) ? retryAfter : 1) * 1000)),
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      const retry = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: "BOSS เกิดแล้วจ้า",
+          content,
+          allowed_mentions: { parse: [] },
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (retry.ok || retry.status === 204) return true;
+      console.error("discord notify failed after 429 retry", retry.status);
+      return false;
+    }
+
     const body = await response.text().catch(() => "");
     console.error(
       "discord notify failed",
@@ -89,8 +138,11 @@ async function postContentNow(content: string): Promise<boolean> {
       body.slice(0, 200),
     );
     return false;
-  } catch {
-    console.error("discord notify failed");
+  } catch (error) {
+    console.error(
+      "discord notify failed",
+      error instanceof Error ? error.message : "error",
+    );
     return false;
   }
 }
